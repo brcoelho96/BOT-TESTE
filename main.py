@@ -70,148 +70,56 @@ DIAS_DA_SEMANA_PT = {
 3: "Quinta-feira", 4: "Sexta-feira", 5: "Sábado", 6: "Domingo"
 }
 
-def init_db(reset=False):
-    conn = sqlite3.connect("guild_nodewar.db")
-    cursor = conn.cursor()
+# --- 🧠 MEMÓRIA CACHE DO BOT (Evita bloqueio do Google) ---
+CACHE_CONFIG = {}
+CACHE_CRONOGRAMA = {}
+CACHE_PRESETS = {}
 
-    if reset:
-        cursor.execute("DROP TABLE IF EXISTS config")
-        cursor.execute("DROP TABLE IF EXISTS presets")
-        cursor.execute("DROP TABLE IF EXISTS historico_presenca")
-        cursor.execute("DROP TABLE IF EXISTS config_mensagens")
-        cursor.execute("DROP TABLE IF EXISTS cronograma_semanal")
-        cursor.execute("DROP TABLE IF EXISTS status_global")
-        cursor.execute("DROP TABLE IF EXISTS requisitos_classes")
-        cursor.execute("DROP TABLE IF EXISTS categorias_sistema")
+async def sincronizar_planilha():
+    global CACHE_CONFIG, CACHE_CRONOGRAMA, CACHE_PRESETS
+    try:
+        # 1. Conecta no Google
+        google_creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+        creds_dict = json.loads(google_creds_json)
+        gc = gspread.service_account_from_dict(creds_dict)
+        planilha = gc.open("DB-Teste-G59") # Troque se o nome for diferente
+        
+        # 2. Puxa as Configurações Gerais
+        aba_config = planilha.worksheet("Config_Geral")
+        dados_config = aba_config.get_all_values()
+        CACHE_CONFIG.clear()
+        for linha in dados_config[1:]: # Pula a linha 1 (Cabeçalho)
+            if len(linha) >= 2 and linha[0].strip() != "":
+                CACHE_CONFIG[linha[0].strip()] = linha[1].strip()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS config (
-            guild_id TEXT PRIMARY KEY, cargo_membro_id TEXT, painel_msg_id TEXT,
-            canal_automacao_id TEXT, hora_criar TEXT, hora_encerrar TEXT, aviso_msg_id TEXT,
-            canal_staff_id TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cronograma_semanal (
-            guild_id TEXT, dia_guerra INTEGER, nome_preset TEXT, ativo INTEGER DEFAULT 1,
-            PRIMARY KEY (guild_id, dia_guerra)
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS presets (
-            guild_id TEXT, nome_preset TEXT, dados_vagas TEXT, PRIMARY KEY (guild_id, nome_preset)
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS historico_presenca (
-            guild_id TEXT, user_id TEXT, data_evento TEXT, funcao TEXT, PRIMARY KEY (guild_id, user_id, data_evento)
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS config_mensagens (
-            guild_id TEXT PRIMARY KEY, msg_dm TEXT
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS status_global (
-            guild_id TEXT PRIMARY KEY, automacao_ativa INTEGER DEFAULT 1
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS requisitos_classes (
-            guild_id TEXT, classe TEXT, cargo_id TEXT, PRIMARY KEY (guild_id, classe)
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS categorias_sistema (
-            guild_id TEXT, classe TEXT, limite INTEGER DEFAULT 0, PRIMARY KEY (guild_id, classe)
-        )
-    """)
+        # 3. Puxa o Cronograma Semanal
+        aba_crono = planilha.worksheet("Cronograma")
+        dados_crono = aba_crono.get_all_values()
+        CACHE_CRONOGRAMA.clear()
+        for linha in dados_crono[1:]:
+            if len(linha) >= 2 and linha[0].strip() != "":
+                CACHE_CRONOGRAMA[linha[0].strip()] = linha[1].strip()
 
-    guild_padrao_id = "1379227181074485299"
-
-    # 🔒 INJEÇÃO NATIVA BLINDADA: Canal de Automação, Canal da Staff (#❗┃bot-log) e Cargo salvos permanentemente
-    cursor.execute("""
-        INSERT OR IGNORE INTO config (guild_id, canal_automacao_id, hora_criar, hora_encerrar, cargo_membro_id, canal_staff_id)
-        VALUES (?, '1379285653778595890', '22:10', '22:05', '1452332141793902603', '1466990263258976378')
-    """, (guild_padrao_id,))
-
-    # Caso a linha já exista, atualiza o canal da staff para garantir que não se perca
-    cursor.execute("""
-        UPDATE config SET canal_staff_id = '1466990263258976378' WHERE guild_id = ? AND canal_staff_id IS NULL
-    """, (guild_padrao_id,))
-
-   # TRAVAS DE CARGO POR ID (Atualizado para o Match Dinâmico)
-    requisitos_iniciais = [
-        ("caller", "1344432495382495264"),
-        ("striker", "1488887105768915219"),
-        ("zerk succ", "1510840382592651406"),
-        ("archer/ranger", "1488544280422256690"),
-        ("shai", "1489053211246592031"),
-        ("nova succ", "1489053121467383910"),
-        ("do-sa", "1510732997928812604"),
-        ("suporte", "1510732886180102144"),
-        ("scout", "1510839768223711242"),
-        ("defesa", "1355009632422334589"),
-        ("bandeira", "1355009632422334589"),
-        ("elefante", "1355009632422334589")
-    ]
-
-    for classe_nome, cargo_id in requisitos_iniciais:
-        cursor.execute("""
-            INSERT OR IGNORE INTO requisitos_classes (guild_id, classe, cargo_id) 
-            VALUES (?, ?, ?)
-        """, (guild_padrao_id, classe_nome, cargo_id))
-
-    # OS 4 PRESETS OFICIAIS COM AS VAGAS EXATAS (Matemática e Títulos Atualizados)
-    presets_completos = {
-        "t2-40": {
-            "👑 CALLER": 3, "👊 STRIKER": 5, "💥 ZERK SUCC": 2, "🏹 ARCHER/RANGER": 9, 
-            "🎸 SHAI": 2, "🛡️ NOVA SUCC": 2, "㊙️ DO-SA": 1, "🪶 SUPORTE": 2, 
-            "🥷 SCOUT": 4, "⚔️ ATAQUE": 5, "🏳️ BANDEIRA": 1, "🐘 ELEFANTE": 1, "🏛️ DEFESA": 3
-        },
-        "t2-50": {
-            "👑 CALLER": 3, "👊 STRIKER": 6, "💥 ZERK SUCC": 3, "🏹 ARCHER/RANGER": 11, 
-            "🎸 SHAI": 3, "🛡️ NOVA SUCC": 2, "㊙️ DO-SA": 3, "🪶 SUPORTE": 2, 
-            "🥷 SCOUT": 5, "⚔️ ATAQUE": 7, "🏳️ BANDEIRA": 1, "🐘 ELEFANTE": 1, "🏛️ DEFESA": 3
-        },
-        "t1-25": {
-            "👑 CALLER": 3, "👊 STRIKER": 4, "💥 ZERK SUCC": 1, "🏹 ARCHER/RANGER": 6, 
-            "🎸 SHAI": 2, "🛡️ NOVA SUCC": 1, "㊙️ DO-SA": 0, "🪶 SUPORTE": 0, 
-            "🥷 SCOUT": 0, "⚔️ ATAQUE": 4, "🏳️ BANDEIRA": 1, "🐘 ELEFANTE": 1, "🏛️ DEFESA": 2
-        },
-        "t1-30": {
-            "👑 CALLER": 3, "👊 STRIKER": 5, "💥 ZERK SUCC": 1, "🏹 ARCHER/RANGER": 8, 
-            "🛡️ NOVA SUCC": 2, "🎸 SHAI": 2, "㊙️ DO-SA": 0, "🪶 SUPORTE": 0, 
-            "🥷 SCOUT": 0, "⚔️ ATAQUE": 5, "🏳️ BANDEIRA": 1, "🐘 ELEFANTE": 1, "🏛️ DEFESA": 2
-        }
-    }
-
-    for nome_preset, dados_vagas in presets_completos.items():
-        cursor.execute("""
-            INSERT OR REPLACE INTO presets (guild_id, nome_preset, dados_vagas)
-            VALUES (?, ?, ?)
-        """, (guild_padrao_id, nome_preset, json.dumps(dados_vagas, ensure_ascii=False)))
-
-    # CRONOGRAMA SEMANAL PERSONALIZADO
-    cronograma_padrao = [
-        (0, "t2-40", 1),  # Segunda-feira
-        (1, "t2-40", 1),  # Terça-feira
-        (2, "t2-40", 1),  # Quarta-feira
-        (3, "t2-40", 1),  # Quinta-feira
-        (4, "t1-25", 1),  # Sexta-feira
-        (5, "t2-40", 0),  # Sábado (Desativado)
-        (6, "t1-30", 1)   # Domingo
-    ]
-
-    for dia_guerra, nome_preset, ativo in cronograma_padrao:
-        cursor.execute("""
-            INSERT OR REPLACE INTO cronograma_semanal (guild_id, dia_guerra, nome_preset, ativo)
-            VALUES (?, ?, ?, ?)
-        """, (guild_padrao_id, dia_guerra, nome_preset, ativo))
-
-    conn.commit()
-    conn.close()
+        # 4. Puxa os Presets de Guerra
+        aba_presets = planilha.worksheet("Setup_Presets")
+        dados_presets = aba_presets.get_all_values()
+        CACHE_PRESETS.clear()
+        for linha in dados_presets[1:]:
+            if len(linha) >= 3 and linha[0].strip() != "":
+                nome_preset = linha[0].strip()
+                classe = linha[1].strip()
+                limite = linha[2].strip()
+                travas = linha[3].strip() if len(linha) > 3 else ""
+                
+                if nome_preset not in CACHE_PRESETS:
+                    CACHE_PRESETS[nome_preset] = []
+                CACHE_PRESETS[nome_preset].append({"classe": classe, "limite": limite, "travas": travas})
+        
+        return True, "✅ Sincronização concluída! O bot aprendeu as configurações da planilha."
+    except Exception as e:
+        print(f"❌ Erro na Sincronização: {e}")
+        return False, f"❌ Erro ao ler a planilha. Verifique se os nomes das abas estão exatos: {e}"
+# -----------------------------------------------------------
 
 init_db(reset=False)
 
@@ -1247,6 +1155,20 @@ async def help_cmd(interaction: discord.Interaction):
 
     await interaction.followup.send(embeds=[embed_params, embed_crono, embed_cats, embed_comandos], ephemeral=True)
 
+@bot.tree.command(name="sync", description="🔄 Força o bot a baixar as novidades da Planilha do Google.")
+async def sync_cmd(interaction: discord.Interaction):
+    # Trava de Staff
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao:
+        return await interaction.response.send_message("❌ Acesso Negado! Apenas a Staff pode usar este comando.", ephemeral=True)
+    
+    # O bot avisa que está pensando (já que puxar do Google demora uns 2 segundos)
+    await interaction.response.defer(ephemeral=True)
+    
+    sucesso, mensagem = await sincronizar_planilha()
+    
+    await interaction.followup.send(mensagem)
+    
 @bot.tree.command(name="setup_presets", description="🛠️ Injeta os 4 presets oficiais e os cargos no banco de dados do servidor.")
 async def setup_presets_cmd(interaction: discord.Interaction):
     # Trava de segurança híbrida (Admin ou Cargo Staff)
@@ -1321,6 +1243,7 @@ async def setup_presets_cmd(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
+    await sincronizar_planilha()
     
     # 🧼 FAXINA DE DUPLICADOS: Limpa o cache local do servidor e sincroniza o global
     try:
