@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import asyncio
 import json
 import zoneinfo
+import gspread
+import json
 from tabulate import tabulate
 
 # --- MÓDULOS PARA A GAMBIARRA DO RENDER (FLASK) ---
@@ -27,7 +29,24 @@ def keep_alive():
     t = Thread(target=run_web_server)
     t.start()
 # --------------------------------------------------
-
+# --- CONEXÃO COM O GOOGLE SHEETS ---
+try:
+    google_creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+    if google_creds_json:
+        creds_dict = json.loads(google_creds_json)
+        gc = gspread.service_account_from_dict(creds_dict)
+        
+        # Troque para o nome exato da sua planilha
+        planilha = gc.open("DB-Teste-G59") 
+        aba_principal = planilha.sheet1
+        
+        aba_principal.update_acell('A1', 'O Bot G59 conseguiu conectar no Google Sheets!')
+        print("✅ Conexão com Google Sheets estabelecida com sucesso!")
+    else:
+        print("⚠️ Credenciais não encontradas no Render.")
+except Exception as e:
+    print(f"❌ Erro ao conectar: {e}")
+# -----------------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
