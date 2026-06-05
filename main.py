@@ -120,9 +120,6 @@ async def sincronizar_planilha():
         print(f"❌ Erro na Sincronização: {e}")
         return False, f"❌ Erro ao ler a planilha. Verifique se os nomes das abas estão exatos: {e}"
 # -----------------------------------------------------------
-
-init_db(reset=False)
-
 # --- FUNÇÕES DE SUPORTE AO BANCO DE DADOS DINÂMICO ---
 def carregar_categorias_db(guild_id):
     conn = sqlite3.connect("guild_nodewar.db")
