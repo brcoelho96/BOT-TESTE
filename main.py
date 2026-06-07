@@ -598,7 +598,7 @@ async def on_ready():
     await sincronizar_planilha()
     
     try:
-        bot.tree.clear_commands(guild=None)
+        # Apenas sincroniza, sem limpar a memória antes!
         synced = await bot.tree.sync()
         print(f"🔄 {len(synced)} comandos globais oficiais sincronizados.")
     except Exception as e:
