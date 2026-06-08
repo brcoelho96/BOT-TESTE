@@ -443,7 +443,6 @@ class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
 class ViewPainelStaff(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        # 🔗 Botão de Planilha REMOVIDO permanentemente a pedido da Administração!
 
     @discord.ui.button(label="🔄 Sincronizar", style=discord.ButtonStyle.primary, custom_id="btn_staff_sync", row=0)
     async def btn_sync(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -478,14 +477,12 @@ async def help_cmd(interaction: discord.Interaction):
     if not tem_permissao:
         return await interaction.response.send_message("❌ Acesso Negado! Apenas a Staff pode usar este comando.", ephemeral=True)
     
-    # Puxa os dados estruturais do banco oculto
     c_membro = f"<@&{CACHE_CONFIG.get('Cargo_Membro_ID')}>" if CACHE_CONFIG.get('Cargo_Membro_ID') else "❌ `Não configurado`"
     c_auto = f"<#{CACHE_CONFIG.get('Canal_Painel_ID')}>" if CACHE_CONFIG.get('Canal_Painel_ID') else "❌ `Não configurado`"
     c_logs = f"<#{CACHE_CONFIG.get('Canal_Logs_ID')}>" if CACHE_CONFIG.get('Canal_Logs_ID') else "❌ `Não configurado`"
     h_abre = CACHE_CONFIG.get("Horario_Abre", "22:10")
     h_fecha = CACHE_CONFIG.get("Horario_Fecha", "22:05")
     
-    # Puxa os novos dados do Relatório Semanal
     c_relatorio = f"<#{CACHE_CONFIG.get('Canal_Relatorio_ID')}>" if CACHE_CONFIG.get('Canal_Relatorio_ID') else "❌ `Não configurado`"
     dia_rel = CACHE_CONFIG.get("Dia_Relatorio", "❌ `Não configurado`")
     hora_rel = CACHE_CONFIG.get("Horario_Relatorio", "❌ `Não configurado`")
@@ -509,7 +506,6 @@ async def help_cmd(interaction: discord.Interaction):
         inline=False
     )
     
-    # Nova Seção Exclusiva da Auditoria de Relatórios
     embed_auditoria.add_field(
         name="📊 Disparo do Relatório Semanal (Fase 4)",
         value=f"🔹 **Canal de Destino:** {c_relatorio}\n🔹 **Agendamento:** Todo(a) `{dia_rel}` às `{hora_rel}`",
@@ -554,9 +550,10 @@ async def help_cmd(interaction: discord.Interaction):
             "**`/cronograma_configurar`** ➔ Adiciona um Preset num dia da semana.\n"
             "**`/preset_configurar`** ➔ Adiciona ou edita vagas de uma classe em um Preset.\n"
             "**`/preset_remover`** ➔ Deleta uma classe de um Preset.\n"
+            "**`/forcar_presenca`** ➔ Inscreve ou remove um membro manualmente da guerra ativa.\n"
             "**`/abrir_painel_teste`** ➔ Força a abertura de um painel de guerra agora.\n"
             "**`/fechar_painel_teste`** ➔ Força o encerramento da guerra atual.\n"
-            "**`/sync`** ➔ Sincroniza o bot (Usado automaticamente pelos outros comandos).\n"
+            "**`/sync`** ➔ Sincroniza o bot manual se necessário.\n"
         ),
         inline=False
     )
@@ -565,6 +562,89 @@ async def help_cmd(interaction: discord.Interaction):
     view = ViewPainelStaff()
     await interaction.response.send_message(embeds=[embed_auditoria, embed_crono, embed_comandos], view=view, ephemeral=True)
 
+# --- NOVO COMANDO: FORÇAR / REMOVER PRESENÇA ---
+@bot.tree.command(name="forcar_presenca", description="👥 Adiciona ou remove um membro manualmente do painel de guerra atual.")
+@discord.app_commands.describe(
+    membro="Selecione o membro do servidor",
+    acao="Escolha o tipo de intervenção manual",
+    classe="Nome exato da função/botão (Necessário apenas para Adicionar)"
+)
+@discord.app_commands.choices(acao=[
+    discord.app_commands.Choice(name="Adicionar na Classe", value="adicionar"),
+    discord.app_commands.Choice(name="Remover da Guerra", value="remover")
+])
+async def forcar_presenca_cmd(interaction: discord.Interaction, membro: discord.Member, acao: discord.app_commands.Choice[str], classe: str = None):
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao: 
+        return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+        
+    await interaction.response.defer(ephemeral=True)
+    global wait_list_geral
+    
+    guild = interaction.guild
+    user_id = membro.id
+    
+    # 1. Rotina de Limpeza Completa: Remove o utilizador de qualquer registo prévio (vagas ou fila)
+    removido_de_vaga = False
+    for c in list(presencas_ativas.keys()):
+        if user_id in presencas_ativas[c]:
+            presencas_ativas[c].remove(user_id)
+            removido_de_vaga = True
+            
+            # Promove o primeiro da fila para a classe que acabou de desocupar
+            for i, j in enumerate(wait_list_geral):
+                if j["funcao"] == c:
+                    promovido = wait_list_geral.pop(i)
+                    if c not in presencas_ativas: presencas_ativas[c] = []
+                    presencas_ativas[c].append(promovido["user_id"])
+                    asyncio.create_task(notificar_promovido_dm(interaction.client, promovido["user_id"], guild.id, c))
+                    break
+            break
+            
+    wait_list_geral = [w for w in wait_list_geral if w["user_id"] != user_id]
+    
+    # 2. Executa a Nova Ação Administrativa
+    if acao.value == "remover":
+        msg_final = f"✅ O membro {membro.mention} foi removido com sucesso de todas as listas da Guerra."
+    else:
+        if not classe:
+            return await interaction.followup.send("❌ Erro: Precisa de especificar o nome da classe para adicionar o membro.", ephemeral=True)
+            
+        cat_alvo = None
+        for k in presencas_ativas.keys():
+            if k.lower().strip() == classe.lower().strip():
+                cat_alvo = k
+                break
+                
+        if not cat_alvo:
+            return await interaction.followup.send(f"❌ Erro: A classe `{classe}` não está ativa ou não foi encontrada no painel atual.", ephemeral=True)
+            
+        limites = RUNTIME["limites_atuais"]
+        limite = int(limites.get(cat_alvo, 0))
+        
+        if len(presencas_ativas[cat_alvo]) < limite:
+            presencas_ativas[cat_alvo].append(user_id)
+            msg_final = f"✅ O membro {membro.mention} foi colocado diretamente na vaga de **{cat_alvo}**!"
+        else:
+            wait_list_geral.append({"user_id": user_id, "funcao": cat_alvo})
+            msg_final = f"⏳ Vagas cheias para **{cat_alvo}**! O membro {membro.mention} foi adicionado à Fila de Espera."
+
+    # 3. Atualiza Dinamicamente a Mensagem do Painel no Canal Oficial (se estiver ativo)
+    if RUNTIME["painel_msg_id"] and RUNTIME["canal_automacao_id"]:
+        try:
+            canal = guild.get_channel(int(RUNTIME["canal_automacao_id"]))
+            if canal:
+                msg_painel = await canal.fetch_message(int(RUNTIME["painel_msg_id"]))
+                await msg_painel.edit(embed=gerar_texto_painel(guild), view=GradeBotoesView())
+        except Exception as e:
+            print(f"⚠️ Painel visual não pôde ser atualizado na hora: {e}")
+
+    # 4. Grava os novos dados na planilha oculta em background e envia log
+    asyncio.create_task(atualizar_planilha_guerra_background())
+    await interaction.followup.send(msg_final, ephemeral=True)
+    await enviar_log_staff(guild, f"{interaction.user.mention} forçou alteração de presença para {membro.mention} (Ação: `{acao.name}` | Função: `{classe or 'N/A'}`).")
+
+# --- COMANDOS PARA A CONFIGURAÇÃO REMOTA (HEADLESS DATABASE) ---
 @bot.tree.command(name="config_geral", description="⚙️ Altera configurações estruturais (Canais, Cargos, Horários e Relatórios).")
 @discord.app_commands.describe(
     configuracao="O que você deseja alterar?",
