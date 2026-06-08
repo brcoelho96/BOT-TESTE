@@ -478,11 +478,17 @@ async def help_cmd(interaction: discord.Interaction):
     if not tem_permissao:
         return await interaction.response.send_message("❌ Acesso Negado! Apenas a Staff pode usar este comando.", ephemeral=True)
     
+    # Puxa os dados estruturais do banco oculto
     c_membro = f"<@&{CACHE_CONFIG.get('Cargo_Membro_ID')}>" if CACHE_CONFIG.get('Cargo_Membro_ID') else "❌ `Não configurado`"
     c_auto = f"<#{CACHE_CONFIG.get('Canal_Painel_ID')}>" if CACHE_CONFIG.get('Canal_Painel_ID') else "❌ `Não configurado`"
     c_logs = f"<#{CACHE_CONFIG.get('Canal_Logs_ID')}>" if CACHE_CONFIG.get('Canal_Logs_ID') else "❌ `Não configurado`"
     h_abre = CACHE_CONFIG.get("Horario_Abre", "22:10")
     h_fecha = CACHE_CONFIG.get("Horario_Fecha", "22:05")
+    
+    # Puxa os novos dados do Relatório Semanal
+    c_relatorio = f"<#{CACHE_CONFIG.get('Canal_Relatorio_ID')}>" if CACHE_CONFIG.get('Canal_Relatorio_ID') else "❌ `Não configurado`"
+    dia_rel = CACHE_CONFIG.get("Dia_Relatorio", "❌ `Não configurado`")
+    hora_rel = CACHE_CONFIG.get("Horario_Relatorio", "❌ `Não configurado`")
     
     status_motor = CACHE_CONFIG.get("Automacao_Ativa", "1")
     status_auto = "🟢 `ATIVO` (Monitorando Horários)" if str(status_motor) == "1" else "🛑 `PAUSADO` (Loops suspensos)"
@@ -498,8 +504,15 @@ async def help_cmd(interaction: discord.Interaction):
         inline=False
     )
     embed_auditoria.add_field(
-        name="⏳ Cronometragem e Loops", 
+        name="⏳ Cronometragem e Loops de Guerra", 
         value=f"⏰ **Abertura Automática:** `{h_abre}`\n⏰ **Fechamento Automático:** `{h_fecha}`", 
+        inline=False
+    )
+    
+    # Nova Seção Exclusiva da Auditoria de Relatórios
+    embed_auditoria.add_field(
+        name="📊 Disparo do Relatório Semanal (Fase 4)",
+        value=f"🔹 **Canal de Destino:** {c_relatorio}\n🔹 **Agendamento:** Todo(a) `{dia_rel}` às `{hora_rel}`",
         inline=False
     )
     
@@ -536,7 +549,7 @@ async def help_cmd(interaction: discord.Interaction):
     embed_comandos.add_field(
         name="📜 Guia de Comandos do Bot",
         value=(
-            "**`/config_geral`** ➔ Configura canais, cargos e liga/desliga o motor.\n"
+            "**`/config_geral`** ➔ Configura canais, cargos, horários e dados do relatório.\n"
             "**`/config_mensagens`** ➔ Edita os textos que o bot fala no chat e no privado.\n"
             "**`/cronograma_configurar`** ➔ Adiciona um Preset num dia da semana.\n"
             "**`/preset_configurar`** ➔ Adiciona ou edita vagas de uma classe em um Preset.\n"
@@ -552,12 +565,10 @@ async def help_cmd(interaction: discord.Interaction):
     view = ViewPainelStaff()
     await interaction.response.send_message(embeds=[embed_auditoria, embed_crono, embed_comandos], view=view, ephemeral=True)
 
-# --- COMANDOS PARA A CONFIGURAÇÃO REMOTA (HEADLESS DATABASE) ---
-
-@bot.tree.command(name="config_geral", description="⚙️ Altera configurações estruturais (Canais, Cargos, Horários e Motor).")
+@bot.tree.command(name="config_geral", description="⚙️ Altera configurações estruturais (Canais, Cargos, Horários e Relatórios).")
 @discord.app_commands.describe(
     configuracao="O que você deseja alterar?",
-    valor="O ID (apenas números) ou Horário (ex: 22:00)"
+    valor="O ID (apenas números), texto ou Horário (ex: 22:00)"
 )
 @discord.app_commands.choices(configuracao=[
     discord.app_commands.Choice(name="Canal Oficial do Painel", value="Canal_Painel_ID"),
@@ -565,7 +576,11 @@ async def help_cmd(interaction: discord.Interaction):
     discord.app_commands.Choice(name="Cargo Oficial de Membro", value="Cargo_Membro_ID"),
     discord.app_commands.Choice(name="Horário de Abertura (ex: 22:10)", value="Horario_Abre"),
     discord.app_commands.Choice(name="Horário de Fechamento (ex: 23:00)", value="Horario_Fecha"),
-    discord.app_commands.Choice(name="Motor Automático (1=LIGADO, 0=DESLIGADO)", value="Automacao_Ativa")
+    discord.app_commands.Choice(name="Motor Automático (1=LIGADO, 0=DESLIGADO)", value="Automacao_Ativa"),
+    # Novas opções adicionadas para controle remoto dos relatórios via chat:
+    discord.app_commands.Choice(name="Canal do Relatório Semanal", value="Canal_Relatorio_ID"),
+    discord.app_commands.Choice(name="Dia do Relatório Semanal (Ex: Domingo)", value="Dia_Relatorio"),
+    discord.app_commands.Choice(name="Horário do Relatório Semanal (Ex: 23:59)", value="Horario_Relatorio")
 ])
 async def config_geral_cmd(interaction: discord.Interaction, configuracao: discord.app_commands.Choice[str], valor: str):
     tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
@@ -584,7 +599,7 @@ async def config_geral_cmd(interaction: discord.Interaction, configuracao: disco
                 linha_alvo = i + 1
                 break
                 
-        if linha_alvo:
+        if alignment := linha_alvo:
             aba.update_acell(f"B{linha_alvo}", valor)
         else:
             aba.append_row([chave, valor])
