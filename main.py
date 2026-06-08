@@ -439,19 +439,18 @@ class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
         await interaction.followup.send(f"✅ Painel [{self.preset_nome.value}] aberto com sucesso no canal <#{canal_alvo.id}>!", ephemeral=True)
         await enviar_log_staff(interaction.guild, f"{interaction.user.mention} forçou a abertura manual do painel usando o preset **{self.preset_nome.value}**.")
 
+# --- PAINEL SUPREMO DA STAFF (/help) ---
 class ViewPainelStaff(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        # ⚠️ SUBSTITUA O LINK ABAIXO PELO LINK REAL DA SUA PLANILHA NO GOOGLE DRIVE
-        link_da_sua_planilha = "https://docs.google.com/spreadsheets/d/1acjAexaAWwXV-I1cwMpK90UXYD_GFaNDDyBeoQkOUK8/edit?usp=sharing" 
-        self.add_item(discord.ui.Button(label="🔗 Editar Planilha", url=link_da_sua_planilha, style=discord.ButtonStyle.link, row=1))
+        # 🔗 Botão de Planilha REMOVIDO permanentemente a pedido da Administração!
 
     @discord.ui.button(label="🔄 Sincronizar", style=discord.ButtonStyle.primary, custom_id="btn_staff_sync", row=0)
     async def btn_sync(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         sucesso, msg = await sincronizar_planilha()
         await interaction.followup.send(msg, ephemeral=True)
-        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} sincronizou as configurações com o Google Sheets.")
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} sincronizou as configurações com o Banco de Dados.")
 
     @discord.ui.button(label="▶️ Abrir Painel", style=discord.ButtonStyle.success, custom_id="btn_staff_abrir", row=0)
     async def btn_abrir(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -486,50 +485,263 @@ async def help_cmd(interaction: discord.Interaction):
     h_fecha = CACHE_CONFIG.get("Horario_Fecha", "22:05")
     
     status_motor = CACHE_CONFIG.get("Automacao_Ativa", "1")
-    status_auto = "🟢 `ATIVO` (Monitorizando Horários)" if str(status_motor) == "1" else "🛑 `PAUSADO` (Loops suspensos)"
+    status_auto = "🟢 `ATIVO` (Monitorando Horários)" if str(status_motor) == "1" else "🛑 `PAUSADO` (Loops suspensos)"
 
     embed_auditoria = discord.Embed(
         title="👑 G59 | PAINEL SUPREMO DE AUDITORIA",
-        description="⚙️ **Verificação e status operacional das configurações ativas no Google Sheets.**",
+        description="⚙️ **Verificação e status operacional do Banco de Dados.**",
         color=discord.Color.from_rgb(255, 215, 0)
     )
     embed_auditoria.add_field(
         name="🌐 Infraestrutura Core", 
-        value=f"🔹 **Status do Motor:** {status_auto}\n🔹 **Cargo de Membro:** {c_membro}\n🔹 **Canal do Painel:** {c_auto}\n🔹 **Canal de Logs (Auditoria):** {c_logs}", 
+        value=f"🔹 **Status do Motor:** {status_auto}\n🔹 **Cargo de Membro:** {c_membro}\n🔹 **Canal do Painel:** {c_auto}\n🔹 **Canal de Logs:** {c_logs}", 
         inline=False
     )
     embed_auditoria.add_field(
         name="⏳ Cronometragem e Loops", 
-        value=f"⏰ **Abertura do Painel:** `{h_abre}`\n⏰ **Fechamento do Painel:** `{h_fecha}`", 
-        inline=False
-    )
-    embed_auditoria.set_footer(text="Para alterar estes dados, edite a aba Config_Geral na planilha e clique em Sincronizar.")
-
-    embed_comandos = discord.Embed(
-        title="🛠️ Ações Rápidas & Comandos",
-        description="Utilize os botões abaixo ou digite os comandos no chat.",
-        color=discord.Color.purple()
-    )
-    embed_comandos.add_field(
-        name="📜 Comandos Disponíveis",
-        value=(
-            "**`/help`** - Abre este painel de controlo.\n"
-            "**`/sync`** - Força o bot a descarregar alterações da folha de cálculo.\n"
-            "**`/abrir_painel_teste`** - Cria um painel ignorando o relógio.\n"
-            "**`/fechar_painel_teste`** - Encerra a guerra atual instantaneamente.\n"
-        ),
+        value=f"⏰ **Abertura Automática:** `{h_abre}`\n⏰ **Fechamento Automático:** `{h_fecha}`", 
         inline=False
     )
     
-    view = ViewPainelStaff()
-    await interaction.response.send_message(embeds=[embed_auditoria, embed_comandos], view=view, ephemeral=True)
+    msg_abertura = CACHE_CONFIG.get("Msg_Abertura", "⚔️ **PAINEL DE GUERRA ABERTO!**")
+    msg_promocao = CACHE_CONFIG.get("Msg_Promocao", "Você foi promovido da fila de espera!")
+    embed_auditoria.add_field(
+        name="💬 Mensagens Personalizadas Atuais", 
+        value=f"**Aviso de Abertura:**\n*{msg_abertura}*\n\n**DM de Promoção da Fila:**\n*{msg_promocao}*", 
+        inline=False
+    )
 
-# --- COMANDOS OFICIAIS EXTRAS ---
-@bot.tree.command(name="sync", description="🔄 Força o bot a baixar as novidades do Google Sheets.")
-async def sync_cmd(interaction: discord.Interaction):
+    embed_crono = discord.Embed(
+        title="🗓️ Cronograma Semanal de Guerras",
+        description="Distribuição dos Presets que o bot abrirá automaticamente por dia.",
+        color=discord.Color.blue()
+    )
+    
+    crono_texto = ""
+    for i in range(7):
+        dia = DIAS_DA_SEMANA_PT[i]
+        preset_dia = CACHE_CRONOGRAMA.get(dia, "")
+        if not preset_dia or str(preset_dia).lower() in ["none", "folga", "descanso", ""]:
+            crono_texto += f"**{dia}:** 💤 `Descanso / Sem Guerra`\n"
+        else:
+            crono_texto += f"**{dia}:** ⚔️ Preset `[{preset_dia}]`\n"
+            
+    embed_crono.add_field(name="Escala Configurada", value=crono_texto, inline=False)
+
+    embed_comandos = discord.Embed(
+        title="🛠️ Ações Rápidas & Comandos",
+        description="Utilize os botões abaixo ou digite os comandos de barra (`/`) no chat.",
+        color=discord.Color.purple()
+    )
+    embed_comandos.add_field(
+        name="📜 Guia de Comandos do Bot",
+        value=(
+            "**`/config_geral`** ➔ Configura canais, cargos e liga/desliga o motor.\n"
+            "**`/config_mensagens`** ➔ Edita os textos que o bot fala no chat e no privado.\n"
+            "**`/cronograma_configurar`** ➔ Adiciona um Preset num dia da semana.\n"
+            "**`/preset_configurar`** ➔ Adiciona ou edita vagas de uma classe em um Preset.\n"
+            "**`/preset_remover`** ➔ Deleta uma classe de um Preset.\n"
+            "**`/abrir_painel_teste`** ➔ Força a abertura de um painel de guerra agora.\n"
+            "**`/fechar_painel_teste`** ➔ Força o encerramento da guerra atual.\n"
+            "**`/sync`** ➔ Sincroniza o bot (Usado automaticamente pelos outros comandos).\n"
+        ),
+        inline=False
+    )
+    embed_comandos.set_footer(text="G59 Database Solutions - 100% Controlado via Discord")
+    
+    view = ViewPainelStaff()
+    await interaction.response.send_message(embeds=[embed_auditoria, embed_crono, embed_comandos], view=view, ephemeral=True)
+
+# --- COMANDOS PARA A CONFIGURAÇÃO REMOTA (HEADLESS DATABASE) ---
+
+@bot.tree.command(name="config_geral", description="⚙️ Altera configurações estruturais (Canais, Cargos, Horários e Motor).")
+@discord.app_commands.describe(
+    configuracao="O que você deseja alterar?",
+    valor="O ID (apenas números) ou Horário (ex: 22:00)"
+)
+@discord.app_commands.choices(configuracao=[
+    discord.app_commands.Choice(name="Canal Oficial do Painel", value="Canal_Painel_ID"),
+    discord.app_commands.Choice(name="Canal de Logs (Auditoria)", value="Canal_Logs_ID"),
+    discord.app_commands.Choice(name="Cargo Oficial de Membro", value="Cargo_Membro_ID"),
+    discord.app_commands.Choice(name="Horário de Abertura (ex: 22:10)", value="Horario_Abre"),
+    discord.app_commands.Choice(name="Horário de Fechamento (ex: 23:00)", value="Horario_Fecha"),
+    discord.app_commands.Choice(name="Motor Automático (1=LIGADO, 0=DESLIGADO)", value="Automacao_Ativa")
+])
+async def config_geral_cmd(interaction: discord.Interaction, configuracao: discord.app_commands.Choice[str], valor: str):
     tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
     if not tem_permissao:
         return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+        
+    await interaction.response.defer(ephemeral=True)
+    try:
+        aba = planilha.worksheet("Config_Geral")
+        dados = aba.get_all_values()
+        chave = configuracao.value
+        linha_alvo = None
+        
+        for i, linha in enumerate(dados):
+            if i > 0 and len(linha) > 0 and linha[0].strip() == chave:
+                linha_alvo = i + 1
+                break
+                
+        if linha_alvo:
+            aba.update_acell(f"B{linha_alvo}", valor)
+        else:
+            aba.append_row([chave, valor])
+            
+        await sincronizar_planilha()
+        await interaction.followup.send(f"✅ Configuração de **{configuracao.name}** atualizada com sucesso para `{valor}`!", ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} alterou **{configuracao.name}** para `{valor}`.")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro ao salvar no banco de dados: {e}", ephemeral=True)
+
+@bot.tree.command(name="config_mensagens", description="💬 Altera as mensagens automáticas enviadas pelo bot.")
+@discord.app_commands.describe(
+    tipo="Qual mensagem deseja alterar?",
+    mensagem="Escreva o texto completo da mensagem."
+)
+@discord.app_commands.choices(tipo=[
+    discord.app_commands.Choice(name="Aviso de Abertura (Chat)", value="Msg_Abertura"),
+    discord.app_commands.Choice(name="Promoção da Fila (DM)", value="Msg_Promocao")
+])
+async def config_mensagens_cmd(interaction: discord.Interaction, tipo: discord.app_commands.Choice[str], mensagem: str):
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+        
+    await interaction.response.defer(ephemeral=True)
+    try:
+        aba = planilha.worksheet("Config_Geral")
+        dados = aba.get_all_values()
+        chave = tipo.value
+        linha_alvo = None
+        
+        for i, linha in enumerate(dados):
+            if i > 0 and len(linha) > 0 and linha[0].strip() == chave:
+                linha_alvo = i + 1
+                break
+                
+        if linha_alvo:
+            aba.update_acell(f"B{linha_alvo}", mensagem)
+        else:
+            aba.append_row([chave, mensagem])
+            
+        await sincronizar_planilha()
+        await interaction.followup.send(f"✅ Nova **{tipo.name}** registrada com sucesso!", ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} atualizou os textos da **{tipo.name}**.")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+@bot.tree.command(name="cronograma_configurar", description="🗓️ Define qual preset será aberto em cada dia da semana.")
+@discord.app_commands.describe(
+    dia="Selecione o dia da semana",
+    preset="Nome do preset (ex: T1-25) ou 'Folga' para cancelar"
+)
+@discord.app_commands.choices(dia=[
+    discord.app_commands.Choice(name="Segunda-feira", value="Segunda"),
+    discord.app_commands.Choice(name="Terça-feira", value="Terca"),
+    discord.app_commands.Choice(name="Quarta-feira", value="Quarta"),
+    discord.app_commands.Choice(name="Quinta-feira", value="Quinta"),
+    discord.app_commands.Choice(name="Sexta-feira", value="Sexta"),
+    discord.app_commands.Choice(name="Sábado", value="Sabado"),
+    discord.app_commands.Choice(name="Domingo", value="Domingo")
+])
+async def cronograma_configurar_cmd(interaction: discord.Interaction, dia: discord.app_commands.Choice[str], preset: str):
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+        
+    await interaction.response.defer(ephemeral=True)
+    try:
+        aba = planilha.worksheet("Cronograma")
+        dados = aba.get_all_values()
+        chave = dia.value
+        linha_alvo = None
+        
+        for i, linha in enumerate(dados):
+            if i > 0 and len(linha) > 0 and linha[0].strip() == chave:
+                linha_alvo = i + 1
+                break
+                
+        if linha_alvo:
+            aba.update_acell(f"B{linha_alvo}", preset)
+        else:
+            aba.append_row([chave, preset])
+            
+        await sincronizar_planilha()
+        await interaction.followup.send(f"🗓️ O dia **{dia.name}** foi configurado para rodar o preset **{preset}**.", ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} definiu o preset **{preset}** para rodar na **{dia.name}**.")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
+
+@bot.tree.command(name="preset_configurar", description="⚙️ Cria ou atualiza uma classe/vaga dentro de um Preset.")
+@discord.app_commands.describe(preset_nome="Nome do Preset", classe="Nome da Classe", vagas="Vagas liberadas", cargo_trava="Cargo obrigatório (Opcional)")
+async def preset_configurar(interaction: discord.Interaction, preset_nome: str, classe: str, vagas: int, cargo_trava: discord.Role = None):
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+        
+    await interaction.response.defer(ephemeral=True)
+    try:
+        aba_presets = planilha.worksheet("Setup_Presets")
+        dados = aba_presets.get_all_values()
+        
+        preset_upper = preset_nome.upper().strip()
+        classe_upper = classe.upper().strip()
+        trava_id = str(cargo_trava.id) if cargo_trava else ""
+        
+        linha_encontrada = None
+        for i, linha in enumerate(dados):
+            if i == 0: continue
+            if len(linha) >= 2 and linha[0].upper().strip() == preset_upper and linha[1].upper().strip() == classe_upper:
+                linha_encontrada = i + 1
+                break
+        
+        if linha_encontrada:
+            aba_presets.update(f"C{linha_encontrada}:D{linha_encontrada}", [[vagas, trava_id]])
+            msg = f"🔄 Vaga de **{classe_upper}** ATUALIZADA no preset **{preset_upper}** (Vagas: {vagas})."
+        else:
+            aba_presets.append_row([preset_upper, classe_upper, vagas, trava_id])
+            msg = f"✅ Nova vaga de **{classe_upper}** CRIADA no preset **{preset_upper}** (Vagas: {vagas})."
+            
+        await sincronizar_planilha()
+        await interaction.followup.send(msg, ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} editou a classe **{classe_upper}** no Preset **{preset_upper}**.")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro ao salvar: {e}", ephemeral=True)
+
+@bot.tree.command(name="preset_remover", description="🗑️ Remove completamente uma classe de um Preset.")
+@discord.app_commands.describe(preset_nome="Nome do Preset", classe="Nome da Classe a ser apagada")
+async def preset_remover(interaction: discord.Interaction, preset_nome: str, classe: str):
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+        
+    await interaction.response.defer(ephemeral=True)
+    try:
+        aba_presets = planilha.worksheet("Setup_Presets")
+        dados = aba_presets.get_all_values()
+        
+        preset_upper = preset_nome.upper().strip()
+        classe_upper = classe.upper().strip()
+        
+        linha_deletar = None
+        for i, linha in enumerate(dados):
+            if i == 0: continue
+            if len(linha) >= 2 and linha[0].upper().strip() == preset_upper and linha[1].upper().strip() == classe_upper:
+                linha_deletar = i + 1
+                break
+        
+        if linha_deletar:
+            aba_presets.delete_rows(linha_deletar)
+            await sincronizar_planilha()
+            await interaction.followup.send(f"🗑️ A classe **{classe_upper}** foi deletada do preset **{preset_upper}**.", ephemeral=True)
+            await enviar_log_staff(interaction.guild, f"{interaction.user.mention} deletou **{classe_upper}** do Preset **{preset_upper}**.")
+        else:
+            await interaction.followup.send(f"⚠️ A classe **{classe_upper}** não foi encontrada no preset.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erro ao acessar o banco: {e}", ephemeral=True)
+
+@bot.tree.command(name="sync", description="🔄 Força o bot a baixar as novidades do Banco de Dados.")
+async def sync_cmd(interaction: discord.Interaction):
+    tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
     
     await interaction.response.defer(ephemeral=True)
     sucesso, mensagem = await sincronizar_planilha()
@@ -538,8 +750,7 @@ async def sync_cmd(interaction: discord.Interaction):
 @bot.tree.command(name="abrir_painel_teste", description="🧪 Abre o painel ignorando o horário")
 async def abrir_painel(interaction: discord.Interaction, preset: str):
     tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
-    if not tem_permissao:
-        return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
         
     await interaction.response.defer(ephemeral=True)
     await ejecutar_criacao_sistema(interaction.guild, interaction.channel, preset)
@@ -549,8 +760,7 @@ async def abrir_painel(interaction: discord.Interaction, preset: str):
 @bot.tree.command(name="fechar_painel_teste", description="🧪 Fecha o painel atual instantaneamente")
 async def fechar_painel(interaction: discord.Interaction):
     tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
-    if not tem_permissao:
-        return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
+    if not tem_permissao: return await interaction.response.send_message("❌ Acesso Negado!", ephemeral=True)
         
     await interaction.response.defer(ephemeral=True)
     await ejecutar_encerramento_sistema(interaction.guild, interaction.channel)
@@ -598,7 +808,6 @@ async def on_ready():
     await sincronizar_planilha()
     
     try:
-        # Apenas sincroniza, sem limpar a memória antes!
         synced = await bot.tree.sync()
         print(f"🔄 {len(synced)} comandos globais oficiais sincronizados.")
     except Exception as e:
