@@ -862,7 +862,7 @@ async def fechar_painel(interaction: discord.Interaction):
     await interaction.followup.send("✅ Painel fechado e limpo.")
     await enviar_log_staff(interaction.guild, f"{interaction.user.mention} usou `/fechar_painel_teste`.")
 
-# --- AUTOMATIZAÇÃO DE HORÁRIO ---
+# --- AUTOMATIZAÇÃO DE HORÁRIO (MOTOR INTELIGENTE POR JANELA) ---
 @tasks.loop(minutes=1)
 async def verificador_horarios_loop():
     if not CACHE_CONFIG or not CACHE_CRONOGRAMA: return
@@ -874,9 +874,8 @@ async def verificador_horarios_loop():
     dia_semana_atual = agora.weekday()
     dia_nome = DIAS_DA_SEMANA_PT[dia_semana_atual]
     
-    hora_abre = CACHE_CONFIG.get("Horario_Abre")
-    hora_fecha = CACHE_CONFIG.get("Horario_Fecha")
-    hora_atual_str = agora.strftime("%H:%M")
+    hora_abre_str = CACHE_CONFIG.get("Horario_Abre")
+    hora_fecha_str = CACHE_CONFIG.get("Horario_Fecha")
     
     canal_id = CACHE_CONFIG.get("Canal_Painel_ID")
     if not canal_id: return
@@ -887,15 +886,42 @@ async def verificador_horarios_loop():
     canal = guild.get_channel(int(canal_id))
     if not canal: return
 
-    preset_de_hoje = CACHE_CRONOGRAMA.get(dia_nome)
-    if preset_de_hoje and str(preset_de_hoje).lower() not in ["", "none", "folga", "descanso"]:
-        if hora_atual_str == hora_abre and RUNTIME["painel_msg_id"] is None:
+    # 1. Verifica se hoje é dia de guerra ou folga
+    preset_de_hoje = CACHE_CRONOGRAMA.get(dia_nome, "")
+    eh_dia_de_guerra = preset_de_hoje and str(preset_de_hoje).lower() not in ["", "none", "folga", "descanso"]
+
+    try:
+        # Converte os horários em minutos totais desde a meia-noite para evitar erros de string
+        ha_h, ha_m = map(int, hora_abre_str.split(":"))
+        hf_h, hf_m = map(int, hora_fecha_str.split(":"))
+        
+        minutos_atual = agora.hour * 60 + agora.minute
+        minutos_abre = ha_h * 60 + ha_m
+        minutos_fecha = hf_h * 60 + hf_m
+    except Exception as e:
+        print(f"⚠️ Erro ao decodificar horários do Banco de Dados: {e}")
+        return
+
+    # 2. Calcula matematicamente se o bot está dentro do horário de guerra
+    dentro_da_janela = False
+    if minutos_abre < minutos_fecha:
+        # Caso padrão: Abre e fecha no mesmo dia (ex: das 22:10 às 23:00)
+        dentro_da_janela = minutos_abre <= minutos_atual < minutos_fecha
+    else:
+        # Caso a guerra vire a meia-noite (ex: das 23:00 às 01:00)
+        dentro_da_janela = minutos_atual >= minutos_abre or minutos_atual < minutos_fecha
+
+    # 3. Execução das Ações Baseadas na Janela
+    if eh_dia_de_guerra and dentro_da_janela:
+        # Se deve estar aberto e o painel não existe na memória, cria-o
+        if RUNTIME["painel_msg_id"] is None:
             asyncio.create_task(ejecutar_criacao_sistema(guild, canal, preset_de_hoje))
-            await enviar_log_staff(guild, f"⏰ O sistema automático ABRIU o painel de guerra para o preset **{preset_de_hoje}**.")
-            
-        elif hora_atual_str == hora_fecha and RUNTIME["painel_msg_id"] is not None:
+            await enviar_log_staff(guild, f"⏰ O motor automático detetou a janela ativa para hoje e ABRIU o painel [{preset_de_hoje}].")
+    else:
+        # Se está fora do horário (ou é dia de folga) e o painel ainda está aberto, fecha-o
+        if RUNTIME["painel_msg_id"] is not None:
             asyncio.create_task(ejecutar_encerramento_sistema(guild, canal))
-            await enviar_log_staff(guild, f"⏰ O sistema automático FECHOU o painel de guerra.")
+            await enviar_log_staff(guild, f"⏰ O motor automático detetou o fim do horário (ou dia de folga) e FECHOU o painel ativo.")
 
 @bot.event
 async def on_ready():
