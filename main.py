@@ -426,6 +426,29 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
     asyncio.create_task(atualizar_planilha_guerra_background())
     await canal_fallback.send("🛑 **A GUERRA foi encerrada! O painel foi fechado.**")
 
+# --- FORMULÁRIO (MODAL) DE ABERTURA MANUAL ---
+class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
+    preset_nome = discord.ui.TextInput(
+        label="Qual Preset deseja abrir?",
+        placeholder="Ex: T1-25",
+        required=True,
+        max_length=30
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        preset = self.preset_nome.value.strip()
+        
+        canal_id = CACHE_CONFIG.get("Canal_Painel_ID")
+        canal_alvo = interaction.guild.get_channel(int(canal_id)) if canal_id and str(canal_id).isdigit() else interaction.channel
+        
+        if not canal_alvo:
+            return await interaction.followup.send("❌ Canal oficial não configurado ou encontrado.", ephemeral=True)
+            
+        await ejecutar_criacao_sistema(interaction.guild, canal_alvo, preset)
+        await interaction.followup.send(f"✅ Painel do preset **[{preset}]** gerado com sucesso!", ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} usou o menu rápido para abrir o preset **{preset}**.")
+
 # --- PAINEL SUPREMO DA STAFF (/help) ---
 class ViewPainelStaff(discord.ui.View):
     def __init__(self):
@@ -440,7 +463,8 @@ class ViewPainelStaff(discord.ui.View):
 
     @discord.ui.button(label="▶️ Abrir Painel", style=discord.ButtonStyle.success, custom_id="btn_staff_abrir", row=0)
     async def btn_abrir(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Use o comando `/abrir_painel_teste` e digite o Preset.", ephemeral=True)
+        # 👇 Chama a caixinha pop-up que criamos acima!
+        await interaction.response.send_modal(ModalAbrirPainel())
 
     @discord.ui.button(label="🛑 Fechar Painel", style=discord.ButtonStyle.danger, custom_id="btn_staff_fechar", row=0)
     async def btn_fechar(self, interaction: discord.Interaction, button: discord.ui.Button):
