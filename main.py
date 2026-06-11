@@ -224,7 +224,8 @@ async def notificar_membros_dm(guild, nome_preset):
     if not cargo:
         return
         
-    texto_dm = f"⚔️ **CONVOCAÇÃO DE GUERRA: [{nome_preset}]**\n\n{msg_abertura}\n\n*Acesse o canal de avisos no servidor do Discord para garantir a sua vaga no painel!*"
+    # Envia RIGOROSAMENTE apenas o texto exato que você configurou!
+    texto_dm = msg_abertura
     
     for membro in cargo.members:
         if not membro.bot:
