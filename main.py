@@ -73,7 +73,6 @@ async def sincronizar_planilha():
         gc = gspread.service_account_from_dict(creds_dict)
         planilha = gc.open("DB-Teste-G59") 
         
-        # 1. Configurações Gerais
         aba_config = planilha.worksheet("Config_Geral")
         dados_config = aba_config.get_all_values()
         CACHE_CONFIG.clear()
@@ -81,7 +80,6 @@ async def sincronizar_planilha():
             if len(linha) >= 2 and linha[0].strip() != "":
                 CACHE_CONFIG[linha[0].strip()] = linha[1].strip()
 
-        # 2. Cronograma Semanal
         aba_crono = planilha.worksheet("Cronograma")
         dados_crono = aba_crono.get_all_values()
         CACHE_CRONOGRAMA.clear()
@@ -89,7 +87,6 @@ async def sincronizar_planilha():
             if len(linha) >= 2 and linha[0].strip() != "":
                 CACHE_CRONOGRAMA[linha[0].strip()] = linha[1].strip()
 
-        # 3. Presets de Guerra e Travas
         aba_presets = planilha.worksheet("Setup_Presets")
         dados_presets = aba_presets.get_all_values()
         CACHE_PRESETS.clear()
@@ -112,7 +109,6 @@ async def sincronizar_planilha():
         print(f"❌ Erro na Sincronização: {e}")
         return False, f"❌ Erro ao ler a planilha: {e}"
 
-# --- ESCRITA EM TEMPO REAL NA PLANILHA (Aba Guerra_Atual) ---
 async def atualizar_planilha_guerra_background():
     try:
         if not planilha: return
@@ -132,14 +128,12 @@ async def atualizar_planilha_guerra_background():
     except Exception as e:
         print(f"⚠️ Erro ao atualizar aba Guerra_Atual: {e}")
 
-# --- SISTEMA DE LOGS DA STAFF ---
 async def enviar_log_staff(guild, mensagem):
     canal_logs_id = CACHE_CONFIG.get("Canal_Logs_ID")
     if canal_logs_id and str(canal_logs_id).isdigit():
         canal = guild.get_channel(int(canal_logs_id))
         if canal:
-            try:
-                await canal.send(f"📋 **Auditoria G59:** {mensagem}")
+            try: await canal.send(f"📋 **Auditoria G59:** {mensagem}")
             except: pass
 
 # --- INTELIGÊNCIA DO PAINEL ---
@@ -191,8 +185,7 @@ def gerar_texto_painel(guild):
         cat_lower = cat.lower().strip()
         req_cargo = "Liberado"
         trava_id = travas_dict.get(cat_lower, "")
-        if trava_id:
-            req_cargo = f"<@&{trava_id}>"
+        if trava_id: req_cargo = f"<@&{trava_id}>"
 
         embed.add_field(name=f"{cat} ({len(inscritos)}/{max_vagas})", value=f"🔒 **{req_cargo}**\n{vagas_texto}", inline=True)
 
@@ -212,26 +205,26 @@ async def notificar_promovido_dm(bot_client, user_id, guild_id, classe_nome):
         await user.send(msg_custom)
     except Exception: pass
 
-# --- SISTEMA DE AVISO NO PRIVADO (DM EM MASSA) ---
+# --- SISTEMA DE AVISO NO PRIVADO (DM EM MASSA) CORRIGIDO ---
 async def notificar_membros_dm(guild, nome_preset):
-    # 👇 Agora o bot puxa da chave exclusiva da DM!
-    texto_dm = CACHE_CONFIG.get("Msg_DM_Abertura", "⚔️ O Painel para a **GUERRA** já está aberto!")
+    # 👇 O bot agora busca a mensagem EXCLUSIVA para a DM configurada na planilha
+    msg_meio = CACHE_CONFIG.get("Msg_DM_Abertura", "⚔️ O Painel para a **GUERRA** já está aberto!")
     cargo_id_str = CACHE_CONFIG.get("Cargo_Membro_ID", "")
     
-    if not cargo_id_str or not str(cargo_id_str).isdigit():
-        return 
+    if not cargo_id_str or not str(cargo_id_str).isdigit(): return 
         
     cargo = guild.get_role(int(cargo_id_str))
-    if not cargo:
-        return
+    if not cargo: return
         
+    # 👇 O cabeçalho e rodapé originais foram restaurados com sua mensagem personalizada no meio!
+    texto_dm = f"⚔️ **CONVOCAÇÃO DE GUERRA: [{nome_preset}]**\n\n{msg_meio}\n\n*Acesse o canal de avisos no servidor do Discord para garantir a sua vaga no painel!*"
+    
     for membro in cargo.members:
         if not membro.bot:
             try:
                 await membro.send(texto_dm)
                 await asyncio.sleep(1.5)  # 🛑 TRAVA ANTI-BAN DO DISCORD
-            except Exception:
-                pass
+            except Exception: pass
 
 # --- FUNCIONAMENTO DOS BOTÕES ---
 class BotaoClasseLista(discord.ui.Button):
@@ -241,12 +234,10 @@ class BotaoClasseLista(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         user_id = interaction.user.id
         cat_nome = self.label
-
         limites = RUNTIME["limites_atuais"]
         limite = int(limites.get(cat_nome, 0))
 
-        if limite <= 0:
-            return await interaction.response.send_message("❌ Esta categoria não possui vagas disponíveis.", ephemeral=True)
+        if limite <= 0: return await interaction.response.send_message("❌ Esta categoria não possui vagas disponíveis.", ephemeral=True)
 
         preset_atual_nome = RUNTIME["preset_ativo"]
         trava_id = None
@@ -259,22 +250,14 @@ class BotaoClasseLista(discord.ui.Button):
         if trava_id and str(trava_id).isdigit():
             cargo_obj = interaction.guild.get_role(int(trava_id))
             has_role = False
-            if cargo_obj and cargo_obj in interaction.user.roles:
-                has_role = True
-            else:
-                has_role = any(str(r.id) == str(trava_id) for r in getattr(interaction.user, 'roles', []))
-                
-            if not has_role:
-                return await interaction.response.send_message(f"❌ Acesso Negado! Você precisa do cargo <@&{trava_id}> para se inscrever.", ephemeral=True)
+            if cargo_obj and cargo_obj in interaction.user.roles: has_role = True
+            else: has_role = any(str(r.id) == str(trava_id) for r in getattr(interaction.user, 'roles', []))
+            if not has_role: return await interaction.response.send_message(f"❌ Acesso Negado! Você precisa do cargo <@&{trava_id}> para se inscrever.", ephemeral=True)
 
-        if cat_nome not in presencas_ativas:
-            presencas_ativas[cat_nome] = []
-
-        if user_id in presencas_ativas[cat_nome]:
-            return await interaction.response.send_message("⚠️ Você já está cadastrado nesta função.", ephemeral=True)
+        if cat_nome not in presencas_ativas: presencas_ativas[cat_nome] = []
+        if user_id in presencas_ativas[cat_nome]: return await interaction.response.send_message("⚠️ Você já está cadastrado nesta função.", ephemeral=True)
 
         global wait_list_geral
-
         for c in list(presencas_ativas.keys()):
             if user_id in presencas_ativas[c]:
                 presencas_ativas[c].remove(user_id)
@@ -394,6 +377,8 @@ async def ejecutar_criacao_sistema(guild, canal, nome_preset: str):
     embed_visual.set_footer(text=f"Estratégia aplicada: Preset [{nome_preset}]")
     
     msg_painel = await canal.send(embed=embed_visual, view=view)
+    
+    # 👇 AQUI ELE PUXA O TEXTO EXCLUSIVO DA SALA
     msg_abertura = CACHE_CONFIG.get("Msg_Abertura", "⚔️ **PAINEL DE GUERRA ABERTO!**")
     msg_aviso = await canal.send(f"{mencao} {msg_abertura}")
 
@@ -402,8 +387,6 @@ async def ejecutar_criacao_sistema(guild, canal, nome_preset: str):
     RUNTIME["canal_automacao_id"] = canal.id
     
     asyncio.create_task(atualizar_planilha_guerra_background())
-    
-    # 👇 O NOVO GATILHO FOI INSERIDO EXATAMENTE AQUI
     asyncio.create_task(notificar_membros_dm(guild, nome_preset))
 
 async def ejecutar_encerramento_sistema(guild, canal_fallback):
@@ -443,6 +426,29 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
     asyncio.create_task(atualizar_planilha_guerra_background())
     await canal_fallback.send("🛑 **A GUERRA foi encerrada! O painel foi fechado.**")
 
+# --- FORMULÁRIO (MODAL) DE ABERTURA MANUAL ---
+class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
+    preset_nome = discord.ui.TextInput(
+        label="Qual Preset deseja abrir?",
+        placeholder="Ex: T1-25",
+        required=True,
+        max_length=30
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        preset = self.preset_nome.value.strip()
+        
+        canal_id = CACHE_CONFIG.get("Canal_Painel_ID")
+        canal_alvo = interaction.guild.get_channel(int(canal_id)) if canal_id and str(canal_id).isdigit() else interaction.channel
+        
+        if not canal_alvo:
+            return await interaction.followup.send("❌ Canal oficial não configurado ou encontrado.", ephemeral=True)
+            
+        await ejecutar_criacao_sistema(interaction.guild, canal_alvo, preset)
+        await interaction.followup.send(f"✅ Painel do preset **[{preset}]** gerado com sucesso!", ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} usou o menu rápido para abrir o preset **{preset}**.")
+
 # --- PAINEL SUPREMO DA STAFF (/help) ---
 class ViewPainelStaff(discord.ui.View):
     def __init__(self):
@@ -457,7 +463,8 @@ class ViewPainelStaff(discord.ui.View):
 
     @discord.ui.button(label="▶️ Abrir Painel", style=discord.ButtonStyle.success, custom_id="btn_staff_abrir", row=0)
     async def btn_abrir(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Use o comando `/abrir_painel_teste` e digite o Preset.", ephemeral=True)
+        # 👇 Chama a caixinha pop-up que criamos acima!
+        await interaction.response.send_modal(ModalAbrirPainel())
 
     @discord.ui.button(label="🛑 Fechar Painel", style=discord.ButtonStyle.danger, custom_id="btn_staff_fechar", row=0)
     async def btn_fechar(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -499,10 +506,9 @@ async def help_cmd(interaction: discord.Interaction):
     embed_auditoria.add_field(name="📊 Disparo do Relatório (Fase 4)", value=f"🔹 **Destino:** {c_relatorio}\n🔹 **Agendamento:** Todo(a) `{dia_rel}` às `{hora_rel}`", inline=False)
     
     msg_abertura = CACHE_CONFIG.get("Msg_Abertura", "⚔️ PAINEL ABERTO!")
-    # 👇 Nova mensagem visual no painel
-    msg_dm_abertura = CACHE_CONFIG.get("Msg_DM_Abertura", "Não configurada")
+    msg_dm = CACHE_CONFIG.get("Msg_DM_Abertura", "O Painel para a GUERRA já está aberto!")
     msg_promocao = CACHE_CONFIG.get("Msg_Promocao", "Você foi promovido da fila!")
-    embed_auditoria.add_field(name="💬 Mensagens Atuais", value=f"**Chat:**\n*{msg_abertura}*\n\n**DM Abertura:**\n*{msg_dm_abertura}*\n\n**DM Promoção:**\n*{msg_promocao}*", inline=False)
+    embed_auditoria.add_field(name="💬 Mensagens Atuais", value=f"**Chat:**\n*{msg_abertura}*\n\n**DM Abertura:**\n*{msg_dm}*\n\n**DM Promoção:**\n*{msg_promocao}*", inline=False)
 
     embed_crono = discord.Embed(title="🗓️ Cronograma Semanal", color=discord.Color.blue())
     crono_texto = ""
@@ -556,10 +562,10 @@ async def config_geral_cmd(interaction: discord.Interaction, configuracao: disco
     except Exception as e: await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
 @bot.tree.command(name="config_mensagens", description="💬 Altera as mensagens automáticas.")
-@discord.app_commands.describe(tipo="Qual mensagem deseja alterar?", mensagem="Escreva o texto completo da mensagem.")
+@discord.app_commands.describe(tipo="Qual mensagem deseja alterar?", mensagem="Escreva o texto completo.")
 @discord.app_commands.choices(tipo=[
     discord.app_commands.Choice(name="Aviso de Abertura (Chat)", value="Msg_Abertura"),
-    # 👇 A NOVA OPÇÃO PARA O MENU DO DISCORD AQUI!
+    # 👇 Nova opção que separa o chat da DM!
     discord.app_commands.Choice(name="Aviso de Abertura (DM Privada)", value="Msg_DM_Abertura"),
     discord.app_commands.Choice(name="Promoção da Fila (DM)", value="Msg_Promocao")
 ])
@@ -742,6 +748,74 @@ async def fechar_painel(interaction: discord.Interaction):
     await interaction.followup.send("✅ Painel fechado e limpo.")
     await enviar_log_staff(interaction.guild, f"{interaction.user.mention} forçou o fecho da guerra.")
 
+# --- MEMÓRIA FOTOGRÁFICA (RECUPERA O PAINEL DEPOIS DE UM COMMIT OU QUEDA) ---
+async def recuperar_estado_guerra():
+    try:
+        canal_id = CACHE_CONFIG.get("Canal_Painel_ID")
+        if not canal_id: return
+        
+        guild = bot.guilds[0] if bot.guilds else None
+        if not guild: return
+        canal = guild.get_channel(int(canal_id))
+        if not canal: return
+
+        painel_msg = None
+        aviso_msg = None
+        # O bot vai ler as últimas 20 mensagens da sala para achar o painel que já está lá
+        async for msg in canal.history(limit=20):
+            if msg.author == bot.user:
+                if msg.embeds and msg.embeds[0].title and "📅" in msg.embeds[0].title:
+                    if not painel_msg: painel_msg = msg
+                elif "@" in msg.content or "PAINEL DE GUERRA ABERTO" in msg.content:
+                    if not aviso_msg: aviso_msg = msg
+
+        if painel_msg:
+            RUNTIME["painel_msg_id"] = painel_msg.id
+            RUNTIME["canal_automacao_id"] = canal.id
+            if aviso_msg: RUNTIME["aviso_msg_id"] = aviso_msg.id
+
+            preset_recuperado = None
+            if painel_msg.embeds[0].footer and "Preset [" in painel_msg.embeds[0].footer.text:
+                texto_footer = painel_msg.embeds[0].footer.text
+                preset_recuperado = texto_footer.split("Preset [")[1].split("]")[0]
+
+            if not preset_recuperado:
+                agora = datetime.now(BR_TIMEZONE)
+                dia_nome = DIAS_DA_SEMANA_PT[agora.weekday()]
+                preset_recuperado = CACHE_CRONOGRAMA.get(dia_nome, "")
+
+            RUNTIME["preset_ativo"] = preset_recuperado
+            RUNTIME["limites_atuais"].clear()
+            
+            if preset_recuperado in CACHE_PRESETS:
+                for item in CACHE_PRESETS[preset_recuperado]:
+                    RUNTIME["limites_atuais"][item["classe"]] = item["limite"]
+            else:
+                for cat in CATEGORIAS_PADRAO_INICIAIS:
+                    RUNTIME["limites_atuais"][cat] = 0
+
+            global presencas_ativas, wait_list_geral
+            presencas_ativas.clear()
+            wait_list_geral.clear()
+            for cat in RUNTIME["limites_atuais"].keys():
+                presencas_ativas[cat] = []
+
+            # O bot puxa os membros que já tinham clicado antes do Commit pela Planilha
+            aba_guerra = planilha.worksheet("Guerra_Atual")
+            dados_guerra = aba_guerra.get_all_values()
+            
+            for linha in dados_guerra[1:]:
+                if len(linha) >= 4:
+                    uid, _, classe, status = linha[0], linha[1], linha[2], linha[3]
+                    if uid.isdigit():
+                        if status == "Confirmado" and classe in presencas_ativas:
+                            presencas_ativas[classe].append(int(uid))
+                        elif status == "Fila de Espera":
+                            wait_list_geral.append({"user_id": int(uid), "funcao": classe})
+            print("🔄 Estado da guerra anterior recuperado com sucesso após o commit!")
+    except Exception as e:
+        print(f"⚠️ Erro ao tentar recuperar estado: {e}")
+
 # --- AUTOMATIZAÇÃO DE HORÁRIO (JANELA INTELIGENTE) ---
 @tasks.loop(minutes=1)
 async def verificador_horarios_loop():
@@ -791,6 +865,9 @@ async def verificador_horarios_loop():
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
     await sincronizar_planilha()
+    
+    # 👇 AQUI ELE CHAMA A MEMÓRIA FOTOGRÁFICA PARA NÃO DUPLICAR O PAINEL
+    await recuperar_estado_guerra()
     
     try:
         synced = await bot.tree.sync()
