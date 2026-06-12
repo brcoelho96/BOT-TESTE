@@ -43,7 +43,8 @@ RUNTIME = {
     "aviso_msg_id": None,
     "canal_automacao_id": None,
     "limites_atuais": {},  
-    "preset_ativo": None
+    "preset_ativo": None,
+    "fechado_manualmente": False  # 👇 NOVA TRAVA ADICIONADA AQUI
 }
 
 presencas_ativas = {}
@@ -356,6 +357,7 @@ async def ejecutar_criacao_sistema(guild, canal, nome_preset: str):
 
     RUNTIME["limites_atuais"].clear()
     RUNTIME["preset_ativo"] = nome_preset
+    RUNTIME["fechado_manualmente"] = False  # 👇 DESTRAVA O SISTEMA AO ABRIR
     
     if nome_preset in CACHE_PRESETS:
         for item in CACHE_PRESETS[nome_preset]:
@@ -415,6 +417,7 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
 
     RUNTIME["painel_msg_id"] = None
     RUNTIME["aviso_msg_id"] = None
+    RUNTIME["fechado_manualmente"] = True  # 👇 ATIVA A TRAVA AO FECHAR MANUALMENTE
     
     for k in presencas_ativas.keys():
         presencas_ativas[k] = []
@@ -850,10 +853,13 @@ async def verificador_horarios_loop():
         dentro_da_janela = minutos_atual >= minutos_abre or minutos_atual < minutos_fecha
 
     if eh_dia_de_guerra and dentro_da_janela:
-        if RUNTIME["painel_msg_id"] is None:
+        # 👇 Agora ele verifica se a trava não foi ativada pela Staff
+        if RUNTIME["painel_msg_id"] is None and not RUNTIME.get("fechado_manualmente", False):
             asyncio.create_task(ejecutar_criacao_sistema(guild, canal, preset_de_hoje))
             await enviar_log_staff(guild, f"⏰ O motor detetou a janela ativa e ABRIU o painel [{preset_de_hoje}].")
     else:
+        # 👇 Quando o horário acaba, a trava é zerada para o dia seguinte!
+        RUNTIME["fechado_manualmente"] = False 
         if RUNTIME["painel_msg_id"] is not None:
             asyncio.create_task(ejecutar_encerramento_sistema(guild, canal))
             await enviar_log_staff(guild, f"⏰ O motor detetou o fim do horário e FECHOU o painel.")
