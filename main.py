@@ -372,7 +372,6 @@ async def ejecutar_criacao_sistema(guild, canal, nome_preset: str):
     
     view = GradeBotoesView()
     embed_visual = gerar_texto_painel(guild)
-    embed_visual.set_footer(text=f"Estratégia aplicada: Preset [{nome_preset}]")
     
     msg_painel = await canal.send(embed=embed_visual, view=view)
     
@@ -422,7 +421,7 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
     wait_list_geral.clear()
     
     asyncio.create_task(atualizar_planilha_guerra_background())
-    await canal_fallback.send("🛑 **A GUERRA foi encerrada! O painel foi fechado.**")
+    await canal_fallback.send("🛑 **A GUERRA foi encerrada! O painel foi fechado.**", delete_after=120.0)
 
 # --- FORMULÁRIO (MODAL) DE ABERTURA MANUAL ---
 class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
