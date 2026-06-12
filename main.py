@@ -207,8 +207,8 @@ async def notificar_promovido_dm(bot_client, user_id, guild_id, classe_nome):
 
 # --- SISTEMA DE AVISO NO PRIVADO (DM EM MASSA) CORRIGIDO ---
 async def notificar_membros_dm(guild, nome_preset):
-    # 👇 O bot agora busca a mensagem EXCLUSIVA para a DM configurada na planilha
-    msg_meio = CACHE_CONFIG.get("Msg_DM_Abertura", "⚔️ O Painel para a **GUERRA** já está aberto!")
+    # 👇 Busca a mensagem EXCLUSIVA para a DM configurada na planilha
+    texto_dm = CACHE_CONFIG.get("Msg_DM_Abertura", "⚔️ O Painel para a **GUERRA** já está aberto!")
     cargo_id_str = CACHE_CONFIG.get("Cargo_Membro_ID", "")
     
     if not cargo_id_str or not str(cargo_id_str).isdigit(): return 
@@ -216,9 +216,7 @@ async def notificar_membros_dm(guild, nome_preset):
     cargo = guild.get_role(int(cargo_id_str))
     if not cargo: return
         
-    # 👇 O cabeçalho e rodapé originais foram restaurados com sua mensagem personalizada no meio!
-    texto_dm = f"⚔️ **CONVOCAÇÃO DE GUERRA: [{nome_preset}]**\n\n{msg_meio}\n\n*Acesse o canal de avisos no servidor do Discord para garantir a sua vaga no painel!*"
-    
+    # Envia RIGOROSAMENTE apenas o texto que você configurou, sem nada extra!
     for membro in cargo.members:
         if not membro.bot:
             try:
