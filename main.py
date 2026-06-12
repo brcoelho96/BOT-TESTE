@@ -214,7 +214,8 @@ async def notificar_promovido_dm(bot_client, user_id, guild_id, classe_nome):
 
 # --- SISTEMA DE AVISO NO PRIVADO (DM EM MASSA) ---
 async def notificar_membros_dm(guild, nome_preset):
-    msg_abertura = CACHE_CONFIG.get("Msg_Abertura", "⚔️ PAINEL DE GUERRA ABERTO!")
+    # 👇 Agora o bot puxa da chave exclusiva da DM!
+    texto_dm = CACHE_CONFIG.get("Msg_DM_Abertura", "⚔️ O Painel para a **GUERRA** já está aberto!")
     cargo_id_str = CACHE_CONFIG.get("Cargo_Membro_ID", "")
     
     if not cargo_id_str or not str(cargo_id_str).isdigit():
@@ -224,9 +225,6 @@ async def notificar_membros_dm(guild, nome_preset):
     if not cargo:
         return
         
-    # Envia RIGOROSAMENTE apenas o texto exato que você configurou!
-    texto_dm = msg_abertura
-    
     for membro in cargo.members:
         if not membro.bot:
             try:
@@ -501,8 +499,10 @@ async def help_cmd(interaction: discord.Interaction):
     embed_auditoria.add_field(name="📊 Disparo do Relatório (Fase 4)", value=f"🔹 **Destino:** {c_relatorio}\n🔹 **Agendamento:** Todo(a) `{dia_rel}` às `{hora_rel}`", inline=False)
     
     msg_abertura = CACHE_CONFIG.get("Msg_Abertura", "⚔️ PAINEL ABERTO!")
+    # 👇 Nova mensagem visual no painel
+    msg_dm_abertura = CACHE_CONFIG.get("Msg_DM_Abertura", "Não configurada")
     msg_promocao = CACHE_CONFIG.get("Msg_Promocao", "Você foi promovido da fila!")
-    embed_auditoria.add_field(name="💬 Mensagens Atuais", value=f"**Chat:**\n*{msg_abertura}*\n\n**DM Promoção:**\n*{msg_promocao}*", inline=False)
+    embed_auditoria.add_field(name="💬 Mensagens Atuais", value=f"**Chat:**\n*{msg_abertura}*\n\n**DM Abertura:**\n*{msg_dm_abertura}*\n\n**DM Promoção:**\n*{msg_promocao}*", inline=False)
 
     embed_crono = discord.Embed(title="🗓️ Cronograma Semanal", color=discord.Color.blue())
     crono_texto = ""
@@ -559,6 +559,8 @@ async def config_geral_cmd(interaction: discord.Interaction, configuracao: disco
 @discord.app_commands.describe(tipo="Qual mensagem deseja alterar?", mensagem="Escreva o texto completo da mensagem.")
 @discord.app_commands.choices(tipo=[
     discord.app_commands.Choice(name="Aviso de Abertura (Chat)", value="Msg_Abertura"),
+    # 👇 A NOVA OPÇÃO PARA O MENU DO DISCORD AQUI!
+    discord.app_commands.Choice(name="Aviso de Abertura (DM Privada)", value="Msg_DM_Abertura"),
     discord.app_commands.Choice(name="Promoção da Fila (DM)", value="Msg_Promocao")
 ])
 async def config_mensagens_cmd(interaction: discord.Interaction, tipo: discord.app_commands.Choice[str], mensagem: str):
