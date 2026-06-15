@@ -138,6 +138,24 @@ async def enviar_log_staff(guild, mensagem):
             try: await canal.send(f"📋 **Auditoria G59:** {mensagem}")
             except: pass
 
+# --- INTELIGÊNCIA DE DATAS (O CÉREBRO CORRIGIDO) ---
+def info_alvo_guerra():
+    agora = datetime.now(BR_TIMEZONE)
+    hora_abre_str = CACHE_CONFIG.get("Horario_Abre", "22:10")
+    try:
+        ha, ma = map(int, hora_abre_str.split(":"))
+    except:
+        ha, ma = 22, 10
+        
+    if agora.hour < ha or (agora.hour == ha and agora.minute < ma):
+        data_alvo = agora
+    else:
+        data_alvo = agora + timedelta(days=1)
+        
+    dia_nome = DIAS_DA_SEMANA_PT[data_alvo.weekday()]
+    data_formatada = data_alvo.strftime("%d/%m")
+    return data_alvo, dia_nome, data_formatada
+
 # --- INTELIGÊNCIA DO PAINEL ---
 def gerar_texto_painel(guild):
     hora_corte_str = CACHE_CONFIG.get("Horario_Abre", "22:10")
@@ -404,24 +422,20 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
         
     if not canal_alvo: canal_alvo = canal_fallback
 
-    # 👇 BLOCO INSERIDO: O Bot salva os membros no Histórico antes de apagar
+    # 👇 O bloco da "Fotografia" (histórico)
     try:
         if planilha:
             aba_historico = planilha.worksheet("Historico")
             data_hoje = datetime.now(BR_TIMEZONE).strftime("%d/%m/%Y")
             linhas_historico = []
-            
             for classe, membros in presencas_ativas.items():
                 for uid in membros:
                     linhas_historico.append([data_hoje, str(uid), classe, "Confirmado"])
-                    
             for w in wait_list_geral:
                 linhas_historico.append([data_hoje, str(w["user_id"]), w["funcao"], "Fila de Espera"])
-            
             if linhas_historico:
                 aba_historico.append_rows(linhas_historico)
-    except Exception as e:
-        print(f"⚠️ Erro ao salvar histórico: {e}")
+    except Exception as e: print(f"⚠️ Erro ao salvar histórico: {e}")
 
     if painel_id:
         try:
@@ -902,15 +916,9 @@ async def recuperar_estado_guerra():
             RUNTIME["canal_automacao_id"] = canal.id
             if aviso_msg: RUNTIME["aviso_msg_id"] = aviso_msg.id
 
-            preset_recuperado = None
-            if painel_msg.embeds[0].footer and "Preset [" in painel_msg.embeds[0].footer.text:
-                texto_footer = painel_msg.embeds[0].footer.text
-                preset_recuperado = texto_footer.split("Preset [")[1].split("]")[0]
-
-            if not preset_recuperado:
-                agora = datetime.now(BR_TIMEZONE)
-                dia_nome = DIAS_DA_SEMANA_PT[agora.weekday()]
-                preset_recuperado = CACHE_CRONOGRAMA.get(dia_nome, "")
+            # 👇 A Memória agora também respeita o Cérebro de Datas!
+            _, dia_nome, _ = info_alvo_guerra()
+            preset_recuperado = CACHE_CRONOGRAMA.get(dia_nome, "")
 
             RUNTIME["preset_ativo"] = preset_recuperado
             RUNTIME["limites_atuais"].clear()
@@ -951,8 +959,12 @@ async def verificador_horarios_loop():
     status_motor = CACHE_CONFIG.get("Automacao_Ativa", "1")
     if str(status_motor) != "1": return 
     
+    # 1. Definimos o horário atual
     agora = datetime.now(BR_TIMEZONE)
-    dia_nome = DIAS_DA_SEMANA_PT[agora.weekday()]
+    
+    # 2. Chamamos o "Cérebro" para saber de qual dia estamos falando
+    _, dia_alvo_nome, _ = info_alvo_guerra()
+    
     hora_abre_str = CACHE_CONFIG.get("Horario_Abre")
     hora_fecha_str = CACHE_CONFIG.get("Horario_Fecha")
     canal_id = CACHE_CONFIG.get("Canal_Painel_ID")
@@ -963,8 +975,9 @@ async def verificador_horarios_loop():
     canal = guild.get_channel(int(canal_id))
     if not canal: return
 
-    preset_de_hoje = CACHE_CRONOGRAMA.get(dia_nome, "")
-    eh_dia_de_guerra = preset_de_hoje and str(preset_de_hoje).lower() not in ["", "none", "folga", "descanso"]
+    # 3. Verificamos se o dia alvo tem guerra configurada na planilha
+    preset_alvo = CACHE_CRONOGRAMA.get(dia_alvo_nome, "")
+    eh_dia_de_guerra = preset_alvo and str(preset_alvo).lower() not in ["", "none", "folga", "descanso"]
 
     try:
         ha_h, ha_m = map(int, hora_abre_str.split(":"))
@@ -975,18 +988,19 @@ async def verificador_horarios_loop():
     except Exception:
         return
 
+    # 4. Cálculo da janela (trata a virada da meia-noite)
     if minutos_abre < minutos_fecha:
         dentro_da_janela = minutos_abre <= minutos_atual < minutos_fecha
     else:
         dentro_da_janela = minutos_atual >= minutos_abre or minutos_atual < minutos_fecha
 
+    # 5. Ação Baseada na janela
     if eh_dia_de_guerra and dentro_da_janela:
-        # 👇 Agora ele verifica se a trava não foi ativada pela Staff
         if RUNTIME["painel_msg_id"] is None and not RUNTIME.get("fechado_manualmente", False):
-            asyncio.create_task(ejecutar_criacao_sistema(guild, canal, preset_de_hoje))
-            await enviar_log_staff(guild, f"⏰ O motor detectou a janela ativa e ABRIU o painel [{preset_de_hoje}].")
+            # O bot usa o preset_alvo correto descoberto pelo Cérebro
+            asyncio.create_task(ejecutar_criacao_sistema(guild, canal, preset_alvo))
+            await enviar_log_staff(guild, f"⏰ O motor detectou a janela ativa e ABRIU o painel [{preset_alvo}].")
     else:
-        # 👇 Quando o horário acaba, a trava é zerada para o dia seguinte!
         RUNTIME["fechado_manualmente"] = False 
         if RUNTIME["painel_msg_id"] is not None:
             asyncio.create_task(ejecutar_encerramento_sistema(guild, canal))
