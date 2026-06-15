@@ -447,6 +447,19 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
     await canal_fallback.send("🛑 **A GUERRA foi encerrada! O painel foi fechado.**", delete_after=120.0)
 
 # --- SISTEMA DE RELATÓRIO DE FREQUÊNCIA (FASE 4) ---
+def quebrar_lista_em_partes(lista, separador, limite=900):
+    partes = []
+    atual = ""
+    for item in lista:
+        if len(atual) + len(item) + len(separador) > limite:
+            partes.append(atual)
+            atual = item
+        else:
+            atual = atual + separador + item if atual else item
+    if atual:
+        partes.append(atual)
+    return partes
+
 async def gerar_relatorio_semanal(guild):
     canal_id = CACHE_CONFIG.get("Canal_Relatorio_ID")
     if not canal_id or not str(canal_id).isdigit(): return False, "Canal de destino não configurado."
@@ -458,7 +471,7 @@ async def gerar_relatorio_semanal(guild):
         aba_historico = planilha.worksheet("Historico")
         dados = aba_historico.get_all_values()
         
-        # 1. Puxa todos os membros oficiais do Discord que têm o cargo
+        # 1. Puxa todos os membros oficiais do Discord
         cargo_id_str = CACHE_CONFIG.get("Cargo_Membro_ID", "")
         membros_oficiais = set()
         if cargo_id_str and str(cargo_id_str).isdigit():
@@ -476,37 +489,61 @@ async def gerar_relatorio_semanal(guild):
         
         if not frequencia and not membros_oficiais: return False, "Nenhum membro ou histórico encontrado."
 
+        # 2. Prepara as linhas do Ranking
         ranking = sorted(frequencia.items(), key=lambda x: x[1], reverse=True)
-        
-        embed = discord.Embed(
+        linhas_ranking = []
+        if ranking:
+            for i, (uid, freq) in enumerate(ranking):
+                medalha = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
+                linhas_ranking.append(f"{medalha} <@{uid}> ➔ **{freq}** presenças")
+        else:
+            linhas_ranking.append("*Ninguém participou de guerras nesta semana.*")
+
+        # 3. Prepara as linhas dos Ausentes
+        membros_presentes = set(frequencia.keys())
+        membros_zerados = membros_oficiais - membros_presentes
+        linhas_ausentes = []
+        if membros_zerados:
+            linhas_ausentes = [f"<@{uid}>" for uid in membros_zerados]
+        else:
+            linhas_ausentes = ["🎉 *Todos os membros participaram de pelo menos uma guerra!*"]
+
+        # Quebra as listas gigantes em blocos de segurança (máximo de 900 caracteres)
+        blocos_ranking = quebrar_lista_em_partes(linhas_ranking, "\n")
+        blocos_ausentes = quebrar_lista_em_partes(linhas_ausentes, ", ")
+
+        # 4. Constrói os Embeds Inteligentes
+        embeds = []
+        embed_atual = discord.Embed(
             title="📊 RELATÓRIO SEMANAL DE NODE WARS",
             description="Confira o engajamento e a presença dos membros nas guerras desta semana!",
             color=discord.Color.brand_green()
         )
         
-        texto_ranking = ""
-        if ranking:
-            for i, (uid, freq) in enumerate(ranking):
-                medalha = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
-                texto_ranking += f"{medalha} <@{uid}> ➔ **{freq}** presenças\n"
-        else: texto_ranking = "*Ninguém participou de guerras nesta semana.*"
+        for i, bloco in enumerate(blocos_ranking):
+            titulo = "🏆 Ranking de Participação" if i == 0 else "🏆 Ranking (Continuação)"
+            embed_atual.add_field(name=titulo, value=bloco, inline=False)
             
-        embed.add_field(name="🏆 Ranking de Participação", value=texto_ranking, inline=False)
-        
-        # Descobre quem FALTOU a semana toda
-        membros_presentes = set(frequencia.keys())
-        membros_zerados = membros_oficiais - membros_presentes
-        
-        texto_zerados = ""
-        if membros_zerados:
-            texto_zerados = ", ".join([f"<@{uid}>" for uid in membros_zerados])
-            if len(texto_zerados) > 1000: texto_zerados = texto_zerados[:1000] + "... e outros."
-        else: texto_zerados = "🎉 *Todos os membros participaram de pelo menos uma guerra!*"
+            # Se a caixinha ficar muito alta (mais de 3 campos), cria um novo painel
+            if len(embed_atual.fields) >= 3:
+                embeds.append(embed_atual)
+                embed_atual = discord.Embed(color=discord.Color.brand_green())
 
-        embed.add_field(name="👻 Ausentes (0 Presenças)", value=texto_zerados, inline=False)
-        embed.set_footer(text="G59 Database Solutions • Histórico resetado para a próxima semana.")
+        for i, bloco in enumerate(blocos_ausentes):
+            titulo = "👻 Ausentes (0 Presenças)" if i == 0 else "👻 Ausentes (Continuação)"
+            embed_atual.add_field(name=titulo, value=bloco, inline=False)
+            
+            if len(embed_atual.fields) >= 3:
+                embeds.append(embed_atual)
+                embed_atual = discord.Embed(color=discord.Color.brand_green())
+
+        if len(embed_atual.fields) > 0 and embed_atual not in embeds:
+            embeds.append(embed_atual)
+
+        embeds[-1].set_footer(text="G59 Database Solutions • Histórico resetado para a próxima semana.")
         
-        await canal.send(embed=embed)
+        # Envia a coleção de Embeds gerada
+        await canal.send(embeds=embeds[:10])
         
         aba_historico.clear()
         aba_historico.append_row(["Data", "ID_Discord", "Classe", "Status"])
