@@ -984,13 +984,13 @@ async def verificador_horarios_loop():
         # 👇 Agora ele verifica se a trava não foi ativada pela Staff
         if RUNTIME["painel_msg_id"] is None and not RUNTIME.get("fechado_manualmente", False):
             asyncio.create_task(ejecutar_criacao_sistema(guild, canal, preset_de_hoje))
-            await enviar_log_staff(guild, f"⏰ O motor detetou a janela ativa e ABRIU o painel [{preset_de_hoje}].")
+            await enviar_log_staff(guild, f"⏰ O motor detectou a janela ativa e ABRIU o painel [{preset_de_hoje}].")
     else:
         # 👇 Quando o horário acaba, a trava é zerada para o dia seguinte!
         RUNTIME["fechado_manualmente"] = False 
         if RUNTIME["painel_msg_id"] is not None:
             asyncio.create_task(ejecutar_encerramento_sistema(guild, canal))
-            await enviar_log_staff(guild, f"⏰ O motor detetou o fim do horário e FECHOU o painel.")
+            await enviar_log_staff(guild, f"⏰ O motor detectou o fim do horário e FECHOU o painel.")
 
 # --- AUTOMATIZAÇÃO DO RELATÓRIO SEMANAL ---
 @tasks.loop(minutes=1)
