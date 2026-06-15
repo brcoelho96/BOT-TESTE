@@ -624,6 +624,34 @@ class ViewPainelStaff(discord.ui.View):
         await interaction.followup.send(f"Status do Relatório: {msg}", ephemeral=True)
         await enviar_log_staff(interaction.guild, f"{interaction.user.mention} usou o botão para gerar o Relatório Semanal.")
 
+    @discord.ui.button(label="⚙️ Ligar/Desligar Motor", style=discord.ButtonStyle.secondary, custom_id="btn_staff_motor", row=1)
+    async def btn_motor(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        
+        # Lê como o motor está agora e inverte a chave
+        status_atual = CACHE_CONFIG.get("Automacao_Ativa", "1")
+        novo_status = "0" if str(status_atual) == "1" else "1"
+        texto_status = "🟢 LIGADO" if novo_status == "1" else "🛑 DESLIGADO"
+        
+        try:
+            aba = planilha.worksheet("Config_Geral")
+            dados = aba.get_all_values()
+            linha_alvo = None
+            for i, linha in enumerate(dados):
+                if i > 0 and len(linha) > 0 and linha[0].strip() == "Automacao_Ativa":
+                    linha_alvo = i + 1
+                    break
+            
+            # Salva na planilha
+            if linha_alvo: aba.update_acell(f"B{linha_alvo}", novo_status)
+            else: aba.append_row(["Automacao_Ativa", novo_status])
+                
+            await sincronizar_planilha()
+            await interaction.followup.send(f"✅ O Motor Automático foi **{texto_status}**!", ephemeral=True)
+            await enviar_log_staff(interaction.guild, f"{interaction.user.mention} alterou o Motor para {texto_status} pelo botão do painel.")
+        except Exception as e: 
+            await interaction.followup.send(f"❌ Erro ao alterar motor: {e}", ephemeral=True)
+
 @bot.tree.command(name="help", description="🛠️ Abre o Painel Supremo de Auditoria e Controle da Staff")
 async def help_cmd(interaction: discord.Interaction):
     tem_permissao = interaction.user.guild_permissions.administrator or any("staff" in role.name.lower() for role in interaction.user.roles)
@@ -839,8 +867,10 @@ async def forcar_presenca_cmd(interaction: discord.Interaction, membro: discord.
     else:
         if not classe: return await interaction.followup.send("❌ Especifique a classe.", ephemeral=True)
         cat_alvo = None
+        busca = classe.lower().strip()
         for k in presencas_ativas.keys():
-            if k.lower().strip() == classe.lower().strip():
+            # A mágica acontece aqui: "Se o que a pessoa digitou estiver dentro do nome oficial da classe..."
+            if busca in k.lower():
                 cat_alvo = k
                 break
         if not cat_alvo: return await interaction.followup.send(f"❌ A classe `{classe}` não está ativa.", ephemeral=True)
