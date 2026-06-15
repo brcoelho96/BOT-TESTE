@@ -44,7 +44,8 @@ RUNTIME = {
     "canal_automacao_id": None,
     "limites_atuais": {},  
     "preset_ativo": None,
-    "fechado_manualmente": False  # 👇 NOVA TRAVA ADICIONADA AQUI
+    "fechado_manualmente": False,
+    "relatorio_enviado_hoje": False  # 👇 ADICIONE ESTA LINHA COM A VÍRGULA EM CIMA
 }
 
 presencas_ativas = {}
@@ -403,6 +404,25 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
         
     if not canal_alvo: canal_alvo = canal_fallback
 
+    # 👇 BLOCO INSERIDO: O Bot salva os membros no Histórico antes de apagar
+    try:
+        if planilha:
+            aba_historico = planilha.worksheet("Historico")
+            data_hoje = datetime.now(BR_TIMEZONE).strftime("%d/%m/%Y")
+            linhas_historico = []
+            
+            for classe, membros in presencas_ativas.items():
+                for uid in membros:
+                    linhas_historico.append([data_hoje, str(uid), classe, "Confirmado"])
+                    
+            for w in wait_list_geral:
+                linhas_historico.append([data_hoje, str(w["user_id"]), w["funcao"], "Fila de Espera"])
+            
+            if linhas_historico:
+                aba_historico.append_rows(linhas_historico)
+    except Exception as e:
+        print(f"⚠️ Erro ao salvar histórico: {e}")
+
     if painel_id:
         try:
             msg = await canal_alvo.fetch_message(int(painel_id))
@@ -425,6 +445,74 @@ async def ejecutar_encerramento_sistema(guild, canal_fallback):
     
     asyncio.create_task(atualizar_planilha_guerra_background())
     await canal_fallback.send("🛑 **A GUERRA foi encerrada! O painel foi fechado.**", delete_after=120.0)
+
+# --- SISTEMA DE RELATÓRIO DE FREQUÊNCIA (FASE 4) ---
+async def gerar_relatorio_semanal(guild):
+    canal_id = CACHE_CONFIG.get("Canal_Relatorio_ID")
+    if not canal_id or not str(canal_id).isdigit(): return False, "Canal de destino não configurado."
+    
+    canal = guild.get_channel(int(canal_id))
+    if not canal: return False, "Canal de destino não encontrado no servidor."
+
+    try:
+        aba_historico = planilha.worksheet("Historico")
+        dados = aba_historico.get_all_values()
+        
+        # 1. Puxa todos os membros oficiais do Discord que têm o cargo
+        cargo_id_str = CACHE_CONFIG.get("Cargo_Membro_ID", "")
+        membros_oficiais = set()
+        if cargo_id_str and str(cargo_id_str).isdigit():
+            cargo = guild.get_role(int(cargo_id_str))
+            if cargo: membros_oficiais = {str(m.id) for m in cargo.members if not m.bot}
+
+        frequencia = {}
+        if len(dados) > 1:
+            for linha in dados[1:]:
+                if len(linha) >= 4:
+                    uid = linha[1]
+                    status = linha[3]
+                    if status == "Confirmado" and uid.isdigit():
+                        frequencia[uid] = frequencia.get(uid, 0) + 1
+        
+        if not frequencia and not membros_oficiais: return False, "Nenhum membro ou histórico encontrado."
+
+        ranking = sorted(frequencia.items(), key=lambda x: x[1], reverse=True)
+        
+        embed = discord.Embed(
+            title="📊 RELATÓRIO SEMANAL DE NODE WARS",
+            description="Confira o engajamento e a presença dos membros nas guerras desta semana!",
+            color=discord.Color.brand_green()
+        )
+        
+        texto_ranking = ""
+        if ranking:
+            for i, (uid, freq) in enumerate(ranking):
+                medalha = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔹"
+                texto_ranking += f"{medalha} <@{uid}> ➔ **{freq}** presenças\n"
+        else: texto_ranking = "*Ninguém participou de guerras nesta semana.*"
+            
+        embed.add_field(name="🏆 Ranking de Participação", value=texto_ranking, inline=False)
+        
+        # Descobre quem FALTOU a semana toda
+        membros_presentes = set(frequencia.keys())
+        membros_zerados = membros_oficiais - membros_presentes
+        
+        texto_zerados = ""
+        if membros_zerados:
+            texto_zerados = ", ".join([f"<@{uid}>" for uid in membros_zerados])
+            if len(texto_zerados) > 1000: texto_zerados = texto_zerados[:1000] + "... e outros."
+        else: texto_zerados = "🎉 *Todos os membros participaram de pelo menos uma guerra!*"
+
+        embed.add_field(name="👻 Ausentes (0 Presenças)", value=texto_zerados, inline=False)
+        embed.set_footer(text="G59 Database Solutions • Histórico resetado para a próxima semana.")
+        
+        await canal.send(embed=embed)
+        
+        aba_historico.clear()
+        aba_historico.append_row(["Data", "ID_Discord", "Classe", "Status"])
+        
+        return True, "Relatório enviado e cofre resetado!"
+    except Exception as e: return False, f"Erro ao gerar: {e}"
 
 # --- FORMULÁRIO (MODAL) DE ABERTURA MANUAL ---
 class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
@@ -478,9 +566,12 @@ class ViewPainelStaff(discord.ui.View):
         await interaction.followup.send("✅ Painel encerrado com sucesso!", ephemeral=True)
         await enviar_log_staff(interaction.guild, f"{interaction.user.mention} encerrou o painel de guerra manualmente.")
 
-    @discord.ui.button(label="📊 Relatório (Em Breve)", style=discord.ButtonStyle.secondary, custom_id="btn_staff_rel", row=1)
+    @discord.ui.button(label="📊 Disparar Relatório Agora", style=discord.ButtonStyle.secondary, custom_id="btn_staff_rel", row=1)
     async def btn_relatorio(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("🚧 Esta função puxará a frequência da planilha! (Fase 4)", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        sucesso, msg = await gerar_relatorio_semanal(interaction.guild)
+        await interaction.followup.send(f"Status do Relatório: {msg}", ephemeral=True)
+        await enviar_log_staff(interaction.guild, f"{interaction.user.mention} usou o botão para gerar o Relatório Semanal.")
 
 @bot.tree.command(name="help", description="🛠️ Abre o Painel Supremo de Auditoria e Controle da Staff")
 async def help_cmd(interaction: discord.Interaction):
@@ -864,6 +955,28 @@ async def verificador_horarios_loop():
             asyncio.create_task(ejecutar_encerramento_sistema(guild, canal))
             await enviar_log_staff(guild, f"⏰ O motor detetou o fim do horário e FECHOU o painel.")
 
+# --- AUTOMATIZAÇÃO DO RELATÓRIO SEMANAL ---
+@tasks.loop(minutes=1)
+async def verificador_relatorio_loop():
+    if not CACHE_CONFIG: return
+    dia_alvo = CACHE_CONFIG.get("Dia_Relatorio", "").lower().strip()
+    hora_alvo = CACHE_CONFIG.get("Horario_Relatorio", "").strip()
+    
+    if not dia_alvo or not hora_alvo or "não configurado" in dia_alvo: return
+    
+    agora = datetime.now(BR_TIMEZONE)
+    dia_hoje = DIAS_DA_SEMANA_PT[agora.weekday()].lower()
+    hora_atual = f"{agora.hour:02d}:{agora.minute:02d}"
+    
+    if dia_hoje == dia_alvo and hora_atual == hora_alvo:
+        if not RUNTIME.get("relatorio_enviado_hoje"):
+            RUNTIME["relatorio_enviado_hoje"] = True
+            guild = bot.guilds[0] if bot.guilds else None
+            if guild:
+                sucesso, msg = await gerar_relatorio_semanal(guild)
+                await enviar_log_staff(guild, f"📊 Relatório Automático disparado: {msg}")
+    else: RUNTIME["relatorio_enviado_hoje"] = False
+
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}")
@@ -880,6 +993,9 @@ async def on_ready():
         
     if not verificador_horarios_loop.is_running(): 
         verificador_horarios_loop.start()
+        
+    if not verificador_relatorio_loop.is_running():
+        verificador_relatorio_loop.start()
 
 keep_alive()
 bot.run(os.environ.get("DISCORD_TOKEN"))
