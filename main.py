@@ -726,7 +726,7 @@ class ViewPainelStaff(discord.ui.View):
             await enviar_log_staff(interaction.guild, f"{interaction.user.mention} alterou o Motor para {texto_status}.")
         except Exception as e: await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
-    # 👇 BOTÃO DE DMs (Totalmente isolado)
+    # 👇 BOTÃO DE DMs (Totalmente isolado e limpo)
     @discord.ui.button(label="🔕 Ligar/Desligar DMs", style=discord.ButtonStyle.secondary, custom_id="btn_staff_dms", row=1)
     async def btn_dms(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
@@ -747,20 +747,6 @@ class ViewPainelStaff(discord.ui.View):
             await sincronizar_planilha(interaction.guild.id)
             await interaction.followup.send(f"✅ O envio de DMs foi **{texto_status}**!", ephemeral=True)
             await enviar_log_staff(interaction.guild, f"{interaction.user.mention} alterou o envio de DMs para {texto_status}.")
-        except Exception as e: await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
-        
-        try:
-            planilha, _ = await obter_planilha_servidor(guild_id_str)
-            if not planilha: return await interaction.followup.send("❌ Planilha não encontrada.", ephemeral=True)
-            aba = planilha.worksheet("Config_Geral")
-            dados = aba.get_all_values()
-            linha_alvo = next((i + 1 for i, linha in enumerate(dados) if i > 0 and len(linha) > 0 and linha[0].strip() == "Automacao_Ativa"), None)
-            if linha_alvo: aba.update_acell(f"B{linha_alvo}", novo_status)
-            else: aba.append_row(["Automacao_Ativa", novo_status])
-                
-            await sincronizar_planilha(interaction.guild.id)
-            await interaction.followup.send(f"✅ O Motor Automático foi **{texto_status}**!", ephemeral=True)
-            await enviar_log_staff(interaction.guild, f"{interaction.user.mention} alterou o Motor para {texto_status}.")
         except Exception as e: await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
 
 @bot.tree.command(name="help", description="🛠️ Abre o Painel Supremo de Auditoria e Controle da Staff")
