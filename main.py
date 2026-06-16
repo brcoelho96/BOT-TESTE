@@ -761,8 +761,15 @@ async def help_cmd(interaction: discord.Interaction):
         else: crono_texto += f"**{dia}:** ⚔️ Preset `[{preset_dia}]`\n"
     embed_crono.add_field(name="Escala", value=crono_texto, inline=False)
 
+    # 👇 A TERCEIRA EMBED COM OS COMANDOS
+    embed_comandos = discord.Embed(title="💻 Guia de Comandos Slash", color=discord.Color.dark_grey())
+    embed_comandos.add_field(name="⚙️ Configuração (Planilha)", value="`/config_geral` - Altera IDs, canais e horários\n`/config_mensagens` - Altera mensagens automáticas\n`/cronograma_configurar` - Define a agenda da semana", inline=False)
+    embed_comandos.add_field(name="⚔️ Presets e Vagas", value="`/preset_configurar` - Cria ou atualiza uma vaga/classe\n`/preset_remover` - Remove uma classe de um preset", inline=False)
+    embed_comandos.add_field(name="🛡️ Moderação e Controle", value="`/forcar_presenca` - Adiciona/remove membro manualmente no painel\n`/sync` - Força atualização imediata com o Google Sheets", inline=False)
+
     view = ViewPainelStaff()
-    await interaction.response.send_message(embeds=[embed_auditoria, embed_crono], view=view, ephemeral=True)
+    # 👇 NOTA: embed_comandos adicionada à lista abaixo!
+    await interaction.response.send_message(embeds=[embed_auditoria, embed_crono, embed_comandos], view=view, ephemeral=True)
 
 # --- COMANDOS PARA A CONFIGURAÇÃO REMOTA ---
 @bot.tree.command(name="config_geral", description="⚙️ Altera configurações estruturais.")
