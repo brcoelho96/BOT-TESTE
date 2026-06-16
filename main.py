@@ -223,6 +223,9 @@ async def enviar_log_staff(guild, mensagem):
 
 async def notificar_promovido_dm(bot_client, user_id, guild_id, classe_nome):
     guild_id_str = str(guild_id)
+    # 👇 O ESCUDO: Se as DMs estiverem desligadas (0), ele não manda nada!
+    if CACHE_CONFIG.get(guild_id_str, {}).get("DMs_Ativas", "1") != "1": return 
+
     msg_custom = "Você foi promovido da fila de espera e convocado para a GUERRA! Garanta sua participação."
     if guild_id_str in CACHE_CONFIG:
         msg_custom = CACHE_CONFIG[guild_id_str].get("Msg_Promocao", msg_custom)
@@ -234,6 +237,9 @@ async def notificar_promovido_dm(bot_client, user_id, guild_id, classe_nome):
 async def notificar_membros_dm(guild, nome_preset):
     guild_id_str = str(guild.id)
     if guild_id_str not in CACHE_CONFIG: return
+    # 👇 O ESCUDO PARA O AVISO GERAL
+    if CACHE_CONFIG[guild_id_str].get("DMs_Ativas", "1") != "1": return 
+
     texto_dm = CACHE_CONFIG[guild_id_str].get("Msg_DM_Abertura", "⚔️ O Painel para a **GUERRA** já está aberto!")
     cargo_id_str = CACHE_CONFIG[guild_id_str].get("Cargo_Membro_ID", "")
     if not cargo_id_str or not str(cargo_id_str).isdigit(): return 
@@ -704,6 +710,28 @@ class ViewPainelStaff(discord.ui.View):
         status_atual = CACHE_CONFIG.get(guild_id_str, {}).get("Automacao_Ativa", "1")
         novo_status = "0" if str(status_atual) == "1" else "1"
         texto_status = "🟢 LIGADO" if novo_status == "1" else "🛑 DESLIGADO"
+
+    @discord.ui.button(label="🔕 Ligar/Desligar DMs", style=discord.ButtonStyle.secondary, custom_id="btn_staff_dms", row=1)
+    async def btn_dms(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        guild_id_str = str(interaction.guild.id)
+        status_atual = CACHE_CONFIG.get(guild_id_str, {}).get("DMs_Ativas", "1")
+        novo_status = "0" if str(status_atual) == "1" else "1"
+        texto_status = "🟢 ATIVADAS" if novo_status == "1" else "🔴 DESLIGADAS (Modo Teste)"
+        
+        try:
+            planilha, _ = await obter_planilha_servidor(guild_id_str)
+            if not planilha: return await interaction.followup.send("❌ Planilha não encontrada.", ephemeral=True)
+            aba = planilha.worksheet("Config_Geral")
+            dados = aba.get_all_values()
+            linha_alvo = next((i + 1 for i, linha in enumerate(dados) if i > 0 and len(linha) > 0 and linha[0].strip() == "DMs_Ativas"), None)
+            if linha_alvo: aba.update_acell(f"B{linha_alvo}", novo_status)
+            else: aba.append_row(["DMs_Ativas", novo_status])
+                
+            await sincronizar_planilha(interaction.guild.id)
+            await interaction.followup.send(f"✅ O envio de DMs foi **{texto_status}**!", ephemeral=True)
+            await enviar_log_staff(interaction.guild, f"{interaction.user.mention} alterou o envio de DMs para {texto_status}.")
+        except Exception as e: await interaction.followup.send(f"❌ Erro: {e}", ephemeral=True)
         
         try:
             planilha, _ = await obter_planilha_servidor(guild_id_str)
@@ -741,8 +769,13 @@ async def help_cmd(interaction: discord.Interaction):
     status_motor = configs.get("Automacao_Ativa", "1")
     status_auto = "🟢 `ATIVO`" if str(status_motor) == "1" else "🛑 `PAUSADO`"
 
+    # 👇 Verifica o status das DMs
+    status_dms = configs.get("DMs_Ativas", "1")
+    status_dm_texto = "🟢 `ATIVADAS`" if str(status_dms) == "1" else "🔴 `DESLIGADAS`"
+
     embed_auditoria = discord.Embed(title="👑 PAINEL SUPREMO DE AUDITORIA", color=discord.Color.from_rgb(255, 215, 0))
-    embed_auditoria.add_field(name="🌐 Infraestrutura Core", value=f"🔹 **Motor:** {status_auto}\n🔹 **Membro:** {c_membro}\n🔹 **Painel:** {c_auto}\n🔹 **Logs:** {c_logs}", inline=False)
+    # 👇 O Status das DMs é adicionado aqui na primeira Embed
+    embed_auditoria.add_field(name="🌐 Infraestrutura Core", value=f"🔹 **Motor:** {status_auto}\n🔹 **DMs:** {status_dm_texto}\n🔹 **Membro:** {c_membro}\n🔹 **Painel:** {c_auto}\n🔹 **Logs:** {c_logs}", inline=False)
     embed_auditoria.add_field(name="⏳ Loops de Guerra", value=f"⏰ **Abre:** `{h_abre}`\n⏰ **Fecha:** `{h_fecha}`", inline=False)
     embed_auditoria.add_field(name="📊 Disparo do Relatório", value=f"🔹 **Destino:** {c_relatorio}\n🔹 **Agendamento:** Todo(a) `{dia_rel}` às `{hora_rel}`", inline=False)
     
@@ -761,14 +794,13 @@ async def help_cmd(interaction: discord.Interaction):
         else: crono_texto += f"**{dia}:** ⚔️ Preset `[{preset_dia}]`\n"
     embed_crono.add_field(name="Escala", value=crono_texto, inline=False)
 
-    # 👇 A TERCEIRA EMBED COM OS COMANDOS
+    # 👇 Sua 3ª Embed salva e preservada!
     embed_comandos = discord.Embed(title="💻 Guia de Comandos Slash", color=discord.Color.dark_grey())
     embed_comandos.add_field(name="⚙️ Configuração (Planilha)", value="`/config_geral` - Altera IDs, canais e horários\n`/config_mensagens` - Altera mensagens automáticas\n`/cronograma_configurar` - Define a agenda da semana", inline=False)
     embed_comandos.add_field(name="⚔️ Presets e Vagas", value="`/preset_configurar` - Cria ou atualiza uma vaga/classe\n`/preset_remover` - Remove uma classe de um preset", inline=False)
     embed_comandos.add_field(name="🛡️ Moderação e Controle", value="`/forcar_presenca` - Adiciona/remove membro manualmente no painel\n`/sync` - Força atualização imediata com o Google Sheets", inline=False)
 
     view = ViewPainelStaff()
-    # 👇 NOTA: embed_comandos adicionada à lista abaixo!
     await interaction.response.send_message(embeds=[embed_auditoria, embed_crono, embed_comandos], view=view, ephemeral=True)
 
 # --- COMANDOS PARA A CONFIGURAÇÃO REMOTA ---
@@ -781,6 +813,7 @@ async def help_cmd(interaction: discord.Interaction):
     discord.app_commands.Choice(name="Horário de Abertura", value="Horario_Abre"),
     discord.app_commands.Choice(name="Horário de Fechamento", value="Horario_Fecha"),
     discord.app_commands.Choice(name="Motor Automático (1=LIGADO, 0=DESLIGADO)", value="Automacao_Ativa"),
+    discord.app_commands.Choice(name="Envio de DMs (1=LIGADO, 0=DESLIGADO)", value="DMs_Ativas"), # 👇 NOVA OPÇÃO AQUI
     discord.app_commands.Choice(name="Canal do Relatório", value="Canal_Relatorio_ID"),
     discord.app_commands.Choice(name="Dia do Relatório", value="Dia_Relatorio"),
     discord.app_commands.Choice(name="Horário do Relatório", value="Horario_Relatorio")
