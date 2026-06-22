@@ -815,7 +815,7 @@ async def help_cmd(interaction: discord.Interaction):
     discord.app_commands.Choice(name="Horário de Abertura", value="Horario_Abre"),
     discord.app_commands.Choice(name="Horário de Fechamento", value="Horario_Fecha"),
     discord.app_commands.Choice(name="Motor Automático (1=LIGADO, 0=DESLIGADO)", value="Automacao_Ativa"),
-    discord.app_commands.Choice(name="Envio de DMs (1=LIGADO, 0=DESLIGADO)", value="DMs_Ativas"), # 👇 NOVA OPÇÃO AQUI
+    discord.app_commands.Choice(name="Envio de DMs (1=LIGADO, 0=DESLIGADO)", value="DMs_Ativas"),
     discord.app_commands.Choice(name="Canal do Relatório", value="Canal_Relatorio_ID"),
     discord.app_commands.Choice(name="Dia do Relatório", value="Dia_Relatorio"),
     discord.app_commands.Choice(name="Horário do Relatório", value="Horario_Relatorio")
@@ -831,6 +831,13 @@ async def config_geral_cmd(interaction: discord.Interaction, configuracao: disco
         aba = planilha.worksheet("Config_Geral")
         dados = aba.get_all_values()
         chave = configuracao.value
+
+        # 👇 O FILTRO DE MENÇÕES: Se a chave terminar em "_ID", removemos os símbolos invisíveis do Discord
+        if "_ID" in chave:
+            for char in ['<', '>', '@', '&', '#', '!']:
+                valor = valor.replace(char, '')
+            valor = valor.strip()
+
         linha_alvo = next((i + 1 for i, linha in enumerate(dados) if i > 0 and len(linha) > 0 and linha[0].strip() == chave), None)
         if linha_alvo: aba.update_acell(f"B{linha_alvo}", valor)
         else: aba.append_row([chave, valor])
