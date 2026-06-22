@@ -904,18 +904,25 @@ async def preset_configurar(interaction: discord.Interaction, preset_nome: str, 
         guild_id_str = str(interaction.guild.id)
         planilha, _ = await obter_planilha_servidor(guild_id_str)
         if not planilha: return await interaction.followup.send("❌ Planilha não encontrada.", ephemeral=True)
+        
         aba_presets = planilha.worksheet("Setup_Presets")
         dados = aba_presets.get_all_values()
+        
         preset_upper = preset_nome.upper().strip()
         classe_upper = classe.upper().strip()
         trava_id = str(cargo_trava.id) if cargo_trava else ""
+        
         linha_encontrada = next((i + 1 for i, linha in enumerate(dados) if i > 0 and len(linha) >= 2 and linha[0].upper().strip() == preset_upper and linha[1].upper().strip() == classe_upper), None)
+        
         if linha_encontrada:
-            aba_presets.update(f"C{linha_encontrada}:D{linha_encontrada}", [[vagas, trava_id]])
+            # 👇 A Correção: Usando update_acell para evitar bugs de versão da biblioteca na hora de sobrescrever
+            aba_presets.update_acell(f"C{linha_encontrada}", vagas)
+            aba_presets.update_acell(f"D{linha_encontrada}", trava_id)
             msg = f"🔄 Vaga de **{classe_upper}** ATUALIZADA."
         else:
             aba_presets.append_row([preset_upper, classe_upper, vagas, trava_id])
             msg = f"✅ Nova vaga de **{classe_upper}** CRIADA."
+            
         await sincronizar_planilha(interaction.guild.id)
         await interaction.followup.send(msg, ephemeral=True)
     except Exception as e: await interaction.followup.send(f"❌ Erro ao salvar: {e}", ephemeral=True)
