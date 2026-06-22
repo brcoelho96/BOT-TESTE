@@ -169,7 +169,7 @@ async def sincronizar_planilha(guild_id):
         
         for linha in dados_presets[1:]:
             if len(linha) >= 3 and linha[0].strip() != "":
-                nome_preset = linha[0].strip()
+                nome_preset = linha[0].strip().upper()
                 classe = linha[1].strip()
                 limite = linha[2].strip()
                 travas = linha[3].strip() if len(linha) > 3 else ""
@@ -452,6 +452,7 @@ class GradeBotoesView(discord.ui.View):
 async def ejecutar_criacao_sistema(guild, canal, nome_preset: str):
     guild_id_str = str(guild.id)
     iniciar_memoria_servidor(guild_id_str)
+    nome_preset = nome_preset.upper().strip()
     
     if RUNTIME[guild_id_str]["painel_msg_id"] and RUNTIME[guild_id_str]["canal_automacao_id"]:
         try:
@@ -659,7 +660,7 @@ class ModalAbrirPainel(discord.ui.Modal, title="Abrir Painel de Guerra"):
     preset_nome = discord.ui.TextInput(label="Qual Preset deseja abrir?", placeholder="Ex: T1-25", required=True, max_length=30)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        preset = self.preset_nome.value.strip()
+        preset = self.preset_nome.value.strip().upper()
         guild_id_str = str(interaction.guild.id)
         configs = CACHE_CONFIG.get(guild_id_str, {})
         canal_id = configs.get("Canal_Painel_ID")
@@ -1038,7 +1039,7 @@ async def recuperar_estado_guerra(guild):
 
             _, dia_nome, _ = info_alvo_guerra(guild_id_str)
             cronos = CACHE_CRONOGRAMA.get(guild_id_str, {})
-            preset_recuperado = cronos.get(dia_nome, "")
+            preset_recuperado = cronos.get(dia_nome, "").upper().strip()
 
             RUNTIME[guild_id_str]["preset_ativo"] = preset_recuperado
             RUNTIME[guild_id_str]["limites_atuais"].clear()
